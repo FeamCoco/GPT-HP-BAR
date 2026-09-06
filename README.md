@@ -49,7 +49,7 @@
 从源码构建：
 
 ```bash
-git clone https://github.com/<you>/GPT-HP-BAR.git
+git clone https://github.com/FeamCoco/GPT-HP-BAR.git
 cd GPT-HP-BAR/app
 cargo build --release
 ./target/release/gpt-hp-bar.exe          # 悬浮窗 + 托盘

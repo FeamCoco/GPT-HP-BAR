@@ -49,7 +49,7 @@ Grab the single-file `gpt-hp-bar.exe` from [Releases](../../releases) (no instal
 Build from source:
 
 ```bash
-git clone https://github.com/<you>/GPT-HP-BAR.git
+git clone https://github.com/FeamCoco/GPT-HP-BAR.git
 cd GPT-HP-BAR/app
 cargo build --release
 ./target/release/gpt-hp-bar.exe          # floating widget + tray
