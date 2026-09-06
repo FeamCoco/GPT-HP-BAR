@@ -98,7 +98,7 @@ docs/                # requirements & design notes (data source research, taskba
 - [ ] Low-quota alert (threshold notification)
 - [ ] Usage trend sparkline
 - [ ] Secondary-monitor taskbar support
-- [ ] Localized UI
+- [x] Localized UI (v0.4: English / 中文, selectable in Settings)
 
 ## License
 
