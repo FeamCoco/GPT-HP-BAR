@@ -13,7 +13,7 @@
   margin-left:6px;font-weight:700;vertical-align:1px;text-transform:uppercase}
 .sk-card .mail{font-size:10px;color:#707a8e;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .sk-card .row{display:flex;align-items:center;gap:9px;margin:7px 0;font-size:11.5px;color:#9aa3b5}
-.sk-card .k{width:50px;flex:none}
+.sk-card .k{min-width:50px;flex:none;white-space:nowrap}
 .sk-card .bar{flex:1;height:7px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden}
 .sk-card .bar i{display:block;height:100%;width:0%;border-radius:99px;
   background:linear-gradient(90deg,var(--tone-a),var(--tone-b));transition:width .35s ease}
@@ -29,6 +29,14 @@
 .sk-card .dot.bad{background:#f87171;box-shadow:0 0 6px #f87171}
 .sk-card.danger .danger-flash{animation:skcard-pulse 1.05s ease-in-out infinite}
 @keyframes skcard-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* 折叠形态（外壳往 body 加 .compact）：只留标题行 + 5h 主行，收窄到 232px
+   （= 窗口 248 - 左右各 8 阴影边距）；可选行统一挂 .extra，内联 display 不与其冲突 */
+body.compact .sk-card{width:232px;padding:12px 16px 10px}
+body.compact .sk-card .head{margin-bottom:1px}
+body.compact .sk-card .mail{display:none}
+body.compact .sk-card .extra{display:none}
+body.compact .sk-card .row{margin:5px 0}
 
 /* 任务栏迷你形态 */
 .sk-card-mini{display:flex;align-items:center;gap:8px;padding:5px 12px;border-radius:99px;

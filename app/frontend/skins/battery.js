@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['battery'] = {
   name: '⑥ 电池 Battery',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [244, 130], compact: null },
+  sizes: { full: [244, 160], compact: null },
 
   html: `
     <div class="sk-battery">

@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['gauge'] = {
   name: '⑦ 表盘 Gauge',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [228, 196], compact: null },
+  sizes: { full: [228, 220], compact: null },
 
   html: `
     <div class="sk-gauge">

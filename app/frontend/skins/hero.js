@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['hero'] = {
   name: '① 血条 Hero',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [320, 120], compact: null },
+  sizes: { full: [320, 140], compact: null },
 
   html: `
     <div class="sk-hero">

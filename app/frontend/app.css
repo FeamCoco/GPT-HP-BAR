@@ -16,6 +16,8 @@ body{font-family:var(--f-ui);font-size:13px;color:#e8ecf4;display:flex;align-ite
   cursor:pointer;padding:0;transition:.15s}
 .tgl:hover{color:#e8ecf4;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.1)}
 .tgl svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+/* 折叠时收缩按钮箭头翻转（完整=朝上，紧凑=朝下），与设计稿 showcase 一致 */
+body.compact #tgl svg{transform:rotate(180deg)}
 #root > *{transition:opacity .2s ease}
 
 @keyframes hp-pulse{0%,100%{opacity:1}50%{opacity:.4}}
