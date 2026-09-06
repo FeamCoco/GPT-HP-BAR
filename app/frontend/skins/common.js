@@ -11,7 +11,7 @@ window.HP = {
   // credits 对象 -> 显示文本
   credits(c) {
     if (!c) return null;
-    if (c.unlimited === true) return '无限';
+    if (c.unlimited === true) return HP.t('unlimited');
     const bal = c.balance ?? c.credits_balance;
     if (bal == null) return null;
     const n = Number(bal);
@@ -41,6 +41,12 @@ window.HP = {
     return email.length > 18 ? email.slice(0, 17) + '…' : email;
   },
 };
+
+// 界面语言胶水（字典与实现在 i18n.js，最先加载）
+HP.lang = window.I18N_LANG || 'zh';
+HP.setLang = (l) => { HP.lang = l === 'en' ? 'en' : 'zh'; window.I18N_LANG = HP.lang; };
+HP.t = (k) => window.i18nT(k);
+HP.i = (s) => window.i18nFill(s);
 
 // 皮肤注册表：各皮肤文件向这里注册
 window.SKINS = window.SKINS || {};

@@ -9,6 +9,7 @@ let cur = null;
 function mount() {
   const id = settings && window.SKINS[settings.skin] ? settings.skin : 'card';
   cur = window.SKINS[id];
+  HP.setLang(settings && settings.lang);
 
   let link = document.getElementById('skin-css');
   if (!link) {
@@ -22,7 +23,7 @@ function mount() {
   link.href = 'skins/' + id + '.css';
 
   const root = document.getElementById('root');
-  root.innerHTML = cur.mini;
+  root.innerHTML = HP.i(cur.mini);
   syncSize();
   setTimeout(syncSize, 150); // 兜底：样式/字体就绪后再校一次
 }

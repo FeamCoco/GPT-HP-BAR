@@ -14,11 +14,11 @@ window.SKINS['battery'] = {
       </div>
       <div class="main">
         <div class="battery"><i class="fill"></i></div>
-        <div><span class="num">--%</span><div class="lab">Codex 剩余额度</div></div>
+        <div><span class="num">--%</span><div class="lab">@@codex_remaining@@</div></div>
       </div>
       <div class="sub">
-        <span><span class="win">5h 窗口</span><span class="cdw"> · 重置 <b class="cdv">--</b></span></span>
-        <span class="wk">周 <b class="nw">--%</b></span>
+        <span><span class="win">@@win5h@@</span><span class="cdw"> · @@reset@@ <b class="cdv">--</b></span></span>
+        <span class="wk">@@week_w@@ <b class="nw">--%</b></span>
       </div>
     </div>`,
 

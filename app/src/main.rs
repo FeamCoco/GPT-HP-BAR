@@ -42,6 +42,45 @@ struct AppState {
     poll_secs: Arc<AtomicU32>,
 }
 
+/// 托盘菜单文案：[显示/隐藏, 设置, 立即刷新, 退出]
+fn tray_labels(lang: &str) -> [&'static str; 4] {
+    if lang == "en" {
+        ["Show / Hide overlay", "Settings…", "Refresh now", "Quit"]
+    } else {
+        ["显示 / 隐藏悬浮窗", "设置…", "立即刷新", "退出"]
+    }
+}
+
+fn settings_title(lang: &str) -> &'static str {
+    if lang == "en" {
+        "GPT-HP-BAR Settings"
+    } else {
+        "GPT-HP-BAR 设置"
+    }
+}
+
+fn tray_menu(app: &AppHandle, lang: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let [l_show, l_set, l_refresh, l_quit] = tray_labels(lang);
+    let show = MenuItem::with_id(app, "show", l_show, true, None::<&str>)?;
+    let st = MenuItem::with_id(app, "settings", l_set, true, None::<&str>)?;
+    let refresh = MenuItem::with_id(app, "refresh", l_refresh, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", l_quit, true, None::<&str>)?;
+    Menu::with_items(app, &[&show, &st, &refresh, &quit])
+}
+
+/// 界面语言切换的桌面侧应用：重建托盘菜单 + 更新设置窗口标题
+fn apply_lang(app: &AppHandle, lang: &str) {
+    let tray = app.state::<TrayState>().0.lock().map(|g| g.clone()).unwrap_or(None);
+    if let Some(t) = tray {
+        if let Ok(menu) = tray_menu(app, lang) {
+            let _ = t.set_menu(Some(menu));
+        }
+    }
+    if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.set_title(settings_title(lang));
+    }
+}
+
 fn main() {
     if std::env::args().any(|a| a == "--probe") {
         datasource::probe();
@@ -50,6 +89,7 @@ fn main() {
 
     let init_settings = settings::load();
     let init_poll = Arc::new(AtomicU32::new(init_settings.poll_secs.clamp(10, 600)));
+    let init_lang = init_settings.lang.clone();
 
     tauri::Builder::default()
         .manage(TrayState(Mutex::new(None)))
@@ -69,12 +109,8 @@ fn main() {
                 }
             }
 
-            // 托盘菜单
-            let show = MenuItem::with_id(app, "show", "显示 / 隐藏悬浮窗", true, None::<&str>)?;
-            let st = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
-            let refresh = MenuItem::with_id(app, "refresh", "立即刷新", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &st, &refresh, &quit])?;
+            // 托盘菜单（文案随界面语言；设置里切换语言后由 apply_lang 重建）
+            let menu = tray_menu(app.handle(), &init_lang)?;
 
             let tray = tauri::tray::TrayIconBuilder::with_id("main")
                 .icon(tauri::include_image!("icons/32x32.png"))
@@ -435,7 +471,14 @@ fn open_settings(app: AppHandle) -> Result<(), String> {
 }
 
 fn open_settings_window(app: &AppHandle) {
+    let lang = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .map(|g| g.lang.clone())
+        .unwrap_or_else(|_| "zh".into());
     if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.set_title(settings_title(&lang));
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
@@ -443,7 +486,7 @@ fn open_settings_window(app: &AppHandle) {
     }
     // 兜底：静态声明缺失时动态创建
     let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("GPT-HP-BAR 设置")
+        .title(settings_title(&lang))
         .inner_size(760.0, 560.0)
         .min_inner_size(680.0, 500.0)
         .resizable(true)
@@ -468,6 +511,11 @@ fn save_settings(app: AppHandle, s: settings::Settings, state: State<AppState>) 
     if !["auto", "green", "amber", "cyan"].contains(&s.accent.as_str()) {
         s.accent = "auto".into();
     }
+    if !["zh", "en"].contains(&s.lang.as_str()) {
+        s.lang = settings::default_lang();
+    }
+    // 语言是否变化：决定是否重建托盘菜单/窗口标题
+    let lang_changed = state.settings.lock().map(|p| p.lang != s.lang).unwrap_or(false);
 
     settings::apply_autostart(s.autostart)?;
     settings::save(&s)?;
@@ -481,6 +529,10 @@ fn save_settings(app: AppHandle, s: settings::Settings, state: State<AppState>) 
     // 任务栏挂件随设置显隐/换位
     #[cfg(windows)]
     position_mini(&app, &state);
+    // 界面语言切换：托盘菜单与设置窗口标题即时重译（悬浮窗由前端响应 settings 事件重挂载）
+    if lang_changed {
+        apply_lang(&app, &s.lang);
+    }
     Ok(s)
 }
 

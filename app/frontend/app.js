@@ -7,7 +7,7 @@ const $ = (s) => document.querySelector(s);
 let usage = null;
 let compact = false;
 let appSettings = {
-  skin: 'card', font_scale: 100, opacity: 96, accent: 'auto',
+  skin: 'card', font_scale: 100, opacity: 96, accent: 'auto', lang: 'zh',
   show_week: true, show_credits: true, show_countdown: true, show_email: true, poll_secs: 60,
 };
 
@@ -26,15 +26,15 @@ async function mountSkin() {
   link.href = 'skins/' + skinId() + '.css';
 
   const root = document.getElementById('root');
-  root.innerHTML = sk.html;
+  root.innerHTML = HP.i(sk.html);
   root.style.zoom = zoom();
   root.style.opacity = (appSettings.opacity ?? 96) / 100;
 
   // 外壳按钮注入皮肤的 chrome 槽位（没有槽位就绝对定位右上）
   const chrome = document.createElement('span');
   chrome.className = 'hp-chrome';
-  chrome.innerHTML = `<button id="gear" class="tgl" title="设置">${GEAR_SVG}</button>` +
-    (sk.sizes.compact ? `<button id="tgl" class="tgl" title="切换 完整 / 紧凑 形态">${CHEV_SVG}</button>` : '');
+  chrome.innerHTML = `<button id="gear" class="tgl" title="${HP.t('ttl_settings')}">${GEAR_SVG}</button>` +
+    (sk.sizes.compact ? `<button id="tgl" class="tgl" title="${HP.t('ttl_toggle')}">${CHEV_SVG}</button>` : '');
   const slot = root.querySelector('.hp-chrome-slot');
   if (slot) { slot.style.display = 'inline-flex'; slot.appendChild(chrome); }
   else {
@@ -74,8 +74,11 @@ function render(u) {
 
 function applySettings(s) {
   const prevSkin = appSettings.skin;
+  const prevLang = appSettings.lang;
   appSettings = s;
-  if (s.skin !== prevSkin || !document.querySelector('#root > *')) { mountSkin(); return; }
+  HP.setLang(s.lang);
+  // 换肤或切语言都要重新挂载（模板令牌在挂载时按当前语言替换）
+  if (s.skin !== prevSkin || s.lang !== prevLang || !document.querySelector('#root > *')) { mountSkin(); return; }
   const root = document.getElementById('root');
   root.style.zoom = zoom();
   root.style.opacity = (s.opacity ?? 96) / 100;

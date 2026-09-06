@@ -11,9 +11,9 @@ window.SKINS['glass'] = {
       <svg class="bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
       <span class="num n5">--%</span>
       <span class="sep s1"></span>
-      <span class="cd"><b class="cdv">--</b> 后重置</span>
+      <span class="cd">@@cd_pre@@<b class="cdv">--</b>@@cd_post@@</span>
       <span class="sep s2"></span>
-      <span class="week">周 <b class="nw">--%</b></span>
+      <span class="week">@@week_w@@ <b class="nw">--%</b></span>
       <span class="hp-chrome-slot" style="display:inline-flex;margin-left:auto"></span>
     </div>`,
 

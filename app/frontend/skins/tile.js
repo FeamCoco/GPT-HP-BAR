@@ -16,7 +16,7 @@ window.SKINS['tile'] = {
         <div class="lab">CODEX</div>
         <span class="num"><span class="nv">--</span><small>%</small></span>
         <div class="track"><i class="fill"></i></div>
-        <div class="sub">重置 <span class="cdv">--</span></div>
+        <div class="sub">@@reset@@ <span class="cdv">--</span></div>
       </div>
     </div>`,
 

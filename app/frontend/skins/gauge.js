@@ -22,8 +22,8 @@ window.SKINS['gauge'] = {
         <circle class="g-hub" cx="84" cy="80" r="4.5"/>
       </svg>
       <div class="num">--%</div>
-      <div class="cap">CODEX 5h 剩余</div>
-      <div class="sub"><span class="cdw">重置 <b class="cdv">--</b></span><span class="wk">周 <b class="nw">--%</b></span></div>
+      <div class="cap">@@gauge_cap@@</div>
+      <div class="sub"><span class="cdw">@@reset@@ <b class="cdv">--</b></span><span class="wk">@@week_w@@ <b class="nw">--%</b></span></div>
     </div>`,
 
   mini: `

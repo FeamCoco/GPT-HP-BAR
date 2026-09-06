@@ -11,7 +11,7 @@ window.SKINS['term'] = {
       <div class="title">GPT-HP-BAR <span class="sub">v0.1 · codex@<span class="plan">--</span></span><span class="hp-chrome-slot" style="display:inline-flex;margin-left:auto"></span></div>
       <div class="line"><span class="k">5h</span><span class="blocks b5"><span class="off">░░░░░░░░░░</span></span><span class="pct n5">--%</span></div>
       <div class="line wk-row"><span class="k">week</span><span class="blocks bwk"><span class="off">░░░░░░░░░░</span></span><span class="pct nw">--%</span></div>
-      <div class="line dim"><span class="err">无数据源 · </span><span class="cdw">reset <b class="cdv">--</b></span><span class="sep1"> · </span><span class="cr-txt">credits <b class="nc">--</b></span><span class="cursor">▌</span></div>
+      <div class="line dim"><span class="err">@@no_source@@ · </span><span class="cdw">reset <b class="cdv">--</b></span><span class="sep1"> · </span><span class="cr-txt">credits <b class="nc">--</b></span><span class="cursor">▌</span></div>
     </div>`,
 
   mini: `

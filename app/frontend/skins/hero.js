@@ -16,9 +16,9 @@ window.SKINS['hero'] = {
       <div class="num n5">--%</div>
       <div class="track"><i class="b5"></i><span class="ticks"></span></div>
       <div class="sub">
-        <span class="win">5h 窗口<span class="cdw"> · 重置 <b class="cdv">--</b></span></span>
-        <span class="nodata">无数据源</span>
-        <span class="wk">周剩余 <b class="nw">--%</b></span>
+        <span class="win">@@win5h@@<span class="cdw"> · @@reset@@ <b class="cdv">--</b></span></span>
+        <span class="nodata">@@no_source@@</span>
+        <span class="wk">@@week_left@@ <b class="nw">--%</b></span>
       </div>
     </div>`,
 

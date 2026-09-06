@@ -10,6 +10,7 @@ pub struct Settings {
     pub font_scale: u32,  // 80-150，100=原始
     pub opacity: u32,     // 40-100
     pub accent: String,   // auto | green | amber | cyan
+    pub lang: String,     // 界面语言 zh | en
     pub show_week: bool,
     pub show_credits: bool,
     pub show_countdown: bool,
@@ -27,6 +28,7 @@ impl Default for Settings {
             font_scale: 100,
             opacity: 96,
             accent: "auto".into(),
+            lang: default_lang(),
             show_week: true,
             show_credits: true,
             show_countdown: true,
@@ -37,6 +39,19 @@ impl Default for Settings {
             mini_pos: "right".into(),
         }
     }
+}
+
+/// 首次运行按系统 UI 语言选默认界面语言（中文系统 -> zh，其余 -> en）
+pub fn default_lang() -> String {
+    #[cfg(windows)]
+    {
+        let id = unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() };
+        if id & 0x3FF == 0x0004 {
+            // LANG_CHINESE
+            return "zh".into();
+        }
+    }
+    "en".into()
 }
 
 pub fn config_path() -> PathBuf {

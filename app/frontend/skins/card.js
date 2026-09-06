@@ -13,10 +13,10 @@ window.SKINS['card'] = {
         <span class="mail hp-mail"></span>
         <span class="hp-chrome-slot" style="display:flex;margin-left:auto"></span>
       </div>
-      <div class="row"><span class="k">5h 窗口</span><div class="bar"><i class="b5"></i></div><b class="n5">--%</b></div>
-      <div class="row wk-row extra"><span class="k">本周</span><div class="bar"><i class="bwk wk"></i></div><b class="nw">--%</b></div>
+      <div class="row"><span class="k">@@win5h@@</span><div class="bar"><i class="b5"></i></div><b class="n5">--%</b></div>
+      <div class="row wk-row extra"><span class="k">@@week_label@@</span><div class="bar"><i class="bwk wk"></i></div><b class="nw">--%</b></div>
       <div class="row cr cr-row extra"><span class="k">credits</span><div class="sp"></div><b class="nc">--</b></div>
-      <div class="foot extra"><span class="dot"></span><span class="src"></span><span class="cd">重置 <b class="cdv">--</b></span></div>
+      <div class="foot extra"><span class="dot"></span><span class="src"></span><span class="cd">@@reset@@ <b class="cdv">--</b></span></div>
     </div>`,
 
   mini: `
@@ -53,7 +53,7 @@ window.SKINS['card'] = {
 
     const dot = q('.dot'), src = q('.src');
     if (ok) { dot.className = 'dot ok'; src.textContent = u.source; src.title = ''; }
-    else { dot.className = 'dot bad'; src.textContent = '无数据源'; src.title = u.error || ''; }
+    else { dot.className = 'dot bad'; src.textContent = HP.t('no_source'); src.title = u.error || ''; }
   },
 
   updateMini(el, u, s) {

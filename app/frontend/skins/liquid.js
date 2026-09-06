@@ -16,7 +16,7 @@ window.SKINS['liquid'] = {
         </div>
         <div class="l-num">--%</div>
       </div>
-      <div class="l-cap"><b class="l-rem">--</b> 剩余<span class="l-cdseg"> · 重置 <b class="l-cd">--</b></span></div>
+      <div class="l-cap"><b class="l-rem">--</b> @@remaining@@<span class="l-cdseg"> · @@reset@@ <b class="l-cd">--</b></span></div>
     </div>`,
 
   mini: `
