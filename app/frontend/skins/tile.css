@@ -1,0 +1,29 @@
+/* 皮肤 ⑤ 磁贴 Tile —— Win11 Fluent 磁贴：状态色渐变底（var(--tone-a/b)）+ 白色大数字 + 底部白色进度线 */
+
+.sk-tile{display:flex;flex-direction:column;align-items:center;width:112px;padding-top:2px}
+.sk-tile .chrome-row{display:flex;align-items:center;width:100%;min-height:16px;margin-bottom:3px}
+.sk-tile .hp-mail{font-size:9px;color:#9aa3b5;font-family:var(--f-mono,"Consolas",monospace);
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:66px}
+.sk-tile .tile{width:78px;padding:10px 8px 9px;border-radius:13px;color:#f0fdfa;text-align:center;
+  background:linear-gradient(155deg,var(--tone-a),var(--tone-b));
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 10px 30px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.22)}
+.sk-tile .tile .lab{font-size:8.5px;letter-spacing:1.6px;opacity:.75;font-family:var(--f-mono,"Consolas",monospace)}
+.sk-tile .tile .num{display:block;font-family:var(--f-disp);font-size:26px;font-weight:600;line-height:1.25;
+  text-shadow:0 1px 3px rgba(0,0,0,.25)}
+.sk-tile .tile .num small{font-size:13px;font-weight:400;opacity:.8}
+.sk-tile .tile .track{height:4px;border-radius:99px;background:rgba(255,255,255,.22);overflow:hidden;margin-top:5px}
+.sk-tile .tile .track i{display:block;height:100%;width:0%;background:#fff;border-radius:99px;transition:width .35s ease}
+.sk-tile .tile .sub{font-size:8.5px;opacity:.7;margin-top:5px;font-family:var(--f-mono,"Consolas",monospace);white-space:nowrap}
+/* 无数据：磁贴底变灰 */
+.sk-tile.nodata .tile{background:linear-gradient(155deg,#6b7488,#3f4655)}
+
+/* 任务栏迷你形态：19px 小磁贴 + 数字 */
+.sk-tile-mini{display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:99px;
+  background:rgba(16,20,28,.88);border:1px solid rgba(255,255,255,.12);color:#e8ecf4;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:12.5px}
+.sk-tile-mini .m-tile{position:relative;width:19px;height:19px;border-radius:5px;flex:none;overflow:hidden;
+  background:linear-gradient(150deg,var(--tone-a),var(--tone-b));box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.sk-tile-mini .m-tile i{position:absolute;left:2.5px;bottom:2.5px;height:3.5px;border-radius:2px}
+.sk-tile-mini .m-tile i.m-track{right:2.5px;background:rgba(255,255,255,.28)}
+.sk-tile-mini .m-tile i.m-fill{width:0%;background:#fff;transition:width .35s ease}

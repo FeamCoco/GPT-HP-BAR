@@ -1,0 +1,22 @@
+:root{
+  --f-ui:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
+  --f-disp:"Segoe UI Variable Display","Segoe UI Semibold","Segoe UI",sans-serif;
+  --f-num:"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif;
+  --tone-a:#6ee7b7; --tone-b:#10b981;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:transparent;overflow:hidden;height:100%;user-select:none}
+body{font-family:var(--f-ui);font-size:13px;color:#e8ecf4;display:flex;align-items:center;justify-content:center}
+#root{position:relative}
+
+/* 皮肤外壳通用：右上角小按钮组（由外壳注入皮肤的 chrome 槽位） */
+.hp-chrome{display:inline-flex;gap:6px;align-items:center}
+.tgl{flex:none;width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.06);color:#9aa3b5;display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;padding:0;transition:.15s}
+.tgl:hover{color:#e8ecf4;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.1)}
+.tgl svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+#root > *{transition:opacity .2s ease}
+
+@keyframes hp-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.danger-flash{animation:hp-pulse 1.05s ease-in-out infinite}

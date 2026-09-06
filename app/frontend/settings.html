@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>GPT-HP-BAR 设置</title>
+  <link rel="stylesheet" href="settings.css" />
+  <link rel="stylesheet" href="skins/card.css" />
+  <link rel="stylesheet" href="skins/hero.css" />
+  <link rel="stylesheet" href="skins/glass.css" />
+  <link rel="stylesheet" href="skins/term.css" />
+  <link rel="stylesheet" href="skins/tile.css" />
+  <link rel="stylesheet" href="skins/battery.css" />
+  <link rel="stylesheet" href="skins/gauge.css" />
+  <link rel="stylesheet" href="skins/neon.css" />
+  <link rel="stylesheet" href="skins/liquid.css" />
+  <link rel="stylesheet" href="skins/pixel.css" />
+</head>
+<body>
+  <main class="win">
+    <header><span class="logo">⚡</span><h1>GPT-HP-BAR 设置</h1><span class="ver">v0.3</span></header>
+
+    <section>
+      <h3>皮肤</h3>
+      <input type="hidden" id="skin">
+      <div class="skin-grid" id="skin_grid"></div>
+      <p class="tip">点击卡片即时换肤（深色底 = 悬浮窗完整形态 · 青色条 = 任务栏挂件形态）。</p>
+    </section>
+
+    <section>
+      <h3>外观与字体</h3>
+      <div class="r"><span class="lab">字号缩放</span>
+        <input type="range" id="font_scale" min="80" max="150" step="5"><b id="font_scale_v">100%</b></div>
+      <div class="r"><span class="lab">悬浮窗透明度</span>
+        <input type="range" id="opacity" min="40" max="100" step="1"><b id="opacity_v">96%</b></div>
+      <div class="r"><span class="lab">主题色</span>
+        <select id="accent">
+          <option value="auto">跟随额度三档（绿 / 黄 / 红）</option>
+          <option value="green">固定绿</option>
+          <option value="amber">固定琥珀</option>
+          <option value="cyan">固定青</option>
+        </select></div>
+    </section>
+
+    <section>
+      <h3>显示内容</h3>
+      <div class="checks">
+        <label><input type="checkbox" id="show_week"> 周窗口</label>
+        <label><input type="checkbox" id="show_credits"> credits 余额</label>
+        <label><input type="checkbox" id="show_countdown"> 重置倒计时</label>
+        <label><input type="checkbox" id="show_email"> 账号邮箱</label>
+      </div>
+    </section>
+
+    <section>
+      <h3>任务栏</h3>
+      <label class="chk"><input type="checkbox" id="mini_enabled"> 显示任务栏挂件（挂载到系统任务栏，自动避开托盘区与开始按钮）</label>
+      <div class="r"><span class="lab">挂件位置</span>
+        <select id="mini_pos">
+          <option value="left">靠左</option>
+          <option value="center">居中</option>
+          <option value="right">靠右（默认）</option>
+        </select>
+        <span class="val">位置冲突时自动移到最近空闲区</span></div>
+    </section>
+
+    <section>
+      <h3>行为</h3>
+      <div class="r"><span class="lab">刷新间隔</span>
+        <select id="poll_secs">
+          <option value="30">30 秒</option>
+          <option value="60">60 秒</option>
+          <option value="120">2 分钟</option>
+          <option value="300">5 分钟</option>
+          <option value="600">10 分钟</option>
+        </select></div>
+      <label class="chk"><input type="checkbox" id="autostart"> 开机自启（用户级注册表，无需管理员）</label>
+    </section>
+
+    <section>
+      <h3>数据源</h3>
+      <p class="src" id="src_info">读取中…</p>
+      <button id="rescan" class="btn">立即刷新数据</button>
+      <p class="tip">无数据源时：运行 <code>codex login</code> 完成 ChatGPT 登录后点"立即刷新"；
+        中转需提供 wham/usage 兼容接口并设为 config.toml 的 model_provider。</p>
+    </section>
+
+    <footer>
+      <span id="saved"></span>
+      <button id="reset" class="btn ghost">恢复默认</button>
+    </footer>
+  </main>
+  <script src="skins/common.js"></script>
+  <script src="skins/card.js"></script>
+  <script src="skins/hero.js"></script>
+  <script src="skins/glass.js"></script>
+  <script src="skins/term.js"></script>
+  <script src="skins/tile.js"></script>
+  <script src="skins/battery.js"></script>
+  <script src="skins/gauge.js"></script>
+  <script src="skins/neon.js"></script>
+  <script src="skins/liquid.js"></script>
+  <script src="skins/pixel.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

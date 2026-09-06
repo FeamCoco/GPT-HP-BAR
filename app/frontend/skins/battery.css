@@ -1,0 +1,32 @@
+/* 皮肤 ⑥ 电池 Battery —— 电量隐喻：58x27 电池图标（tone 渐变填充条）+ 大数字 + 副行（5h 窗口/重置/周） */
+
+.sk-battery{display:flex;flex-direction:column;gap:8px;width:228px;padding:9px 16px 12px;border-radius:14px;color:#eef2f8;
+  background:rgba(12,15,20,.84);border:1px solid rgba(255,255,255,.1);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+.sk-battery .top{display:flex;align-items:center;width:100%;min-height:16px}
+.sk-battery .hp-mail{font-size:9px;color:#707a8e;font-family:var(--f-mono,"Consolas",monospace);
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:120px}
+.sk-battery .main{display:flex;align-items:center;gap:12px}
+.sk-battery .battery{position:relative;width:58px;height:27px;border:2.5px solid #aeb6c6;border-radius:7px;flex:none;padding:3px}
+.sk-battery .battery::after{content:"";position:absolute;right:-8px;top:7px;width:5px;height:9px;border-radius:0 3px 3px 0;background:#aeb6c6}
+.sk-battery .battery i{display:block;height:100%;width:0%;border-radius:2.5px;
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));box-shadow:0 0 10px -2px var(--tone-b);transition:width .35s ease}
+.sk-battery .num{font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:27px;font-weight:700;line-height:1;color:var(--tone-a)}
+.sk-battery .lab{font-size:10.5px;color:#8b93a5;margin-top:3px;letter-spacing:.5px}
+.sk-battery .sub{display:flex;justify-content:space-between;width:100%;border-top:1px solid rgba(255,255,255,.08);padding-top:8px;font-size:11px;color:#8b93a5}
+.sk-battery .sub b{color:#c3cad8;font-weight:500}
+/* 无数据：电池整体变灰 */
+.sk-battery.nodata .battery{border-color:#6b7488}
+.sk-battery.nodata .battery::after{background:#6b7488}
+.sk-battery.nodata .battery i{background:#6b7488;box-shadow:none}
+.sk-battery.nodata .num{color:#8b93a5}
+/* 低电量（<=20%）：电池闪烁 */
+.sk-battery.danger .battery i{animation:skbatt-pulse 1.05s ease-in-out infinite}
+@keyframes skbatt-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* 任务栏迷你形态：26x13 电池轮廓 + 填充条 + 数字 */
+.sk-battery-mini{display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:99px;
+  background:rgba(16,20,28,.88);border:1px solid rgba(255,255,255,.12);color:#e8ecf4;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:12.5px}
+.sk-battery-mini .m-batt{position:relative;width:26px;height:13px;border:1.5px solid rgba(160,170,190,.9);border-radius:3.5px;flex:none;padding:1.5px}
+.sk-battery-mini .m-batt::after{content:"";position:absolute;right:-4.5px;top:3px;width:2.5px;height:5px;border-radius:0 2px 2px 0;background:rgba(160,170,190,.9)}
+.sk-battery-mini .m-batt i{display:block;height:100%;width:0%;background:var(--tone-b);border-radius:1px;transition:width .35s ease}

@@ -1,0 +1,40 @@
+/* 皮肤 ① 血条 Hero —— 大号 DIN 数字 + 10 段分段血槽（刻度遮罩），余量越低越暖、告急呼吸闪烁 */
+
+.sk-hero{width:304px;padding:12px 16px 10px;border-radius:14px;color:#eef2f8;
+  background:rgba(12,15,20,.84);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);
+  box-shadow:0 14px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08)}
+.sk-hero.danger{border-color:rgba(239,68,68,.45)}
+.sk-hero .head{display:flex;align-items:center;gap:8px;margin-bottom:5px;min-height:16px}
+.sk-hero .lab{font-size:11px;letter-spacing:2.5px;color:#9aa3b5;flex:none;
+  font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace)}
+.sk-hero .hp-mail{font-size:9.5px;color:#707a8e;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace)}
+.sk-hero .num{font-family:var(--f-num,"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif);
+  font-size:30px;font-weight:700;line-height:1;color:var(--tone-a);
+  text-shadow:0 0 18px color-mix(in srgb,var(--tone-b) 55%,transparent)}
+.sk-hero .track{position:relative;height:11px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden;margin-top:7px}
+.sk-hero .b5{display:block;height:100%;width:0%;border-radius:99px;
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));
+  box-shadow:0 0 14px -1px var(--tone-b);transition:width .35s ease}
+.sk-hero .ticks{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(90deg,transparent 0,transparent calc(10% - 2px),rgba(8,10,14,.75) calc(10% - 2px),rgba(8,10,14,.75) 10%)}
+.sk-hero .sub{display:flex;justify-content:space-between;margin-top:8px;font-size:11.5px;color:#8b93a5}
+.sk-hero .sub b{color:#c3cad8;font-weight:500;font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif)}
+.sk-hero .nodata{display:none}
+/* 无数据：整体去色 */
+.sk-hero.nodata .num{color:#8b93a5;text-shadow:none}
+.sk-hero.nodata .b5{background:#6b7488;box-shadow:none}
+/* 告急：数字（全局 .danger-flash）与血槽同频呼吸 */
+.sk-hero.danger .b5{animation:skhero-pulse 1.05s ease-in-out infinite}
+@keyframes skhero-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* 任务栏迷你形态：44x9 刻度血槽 + 数字 */
+.sk-hero-mini{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;
+  background:rgba(16,20,28,.88);border:1px solid rgba(255,255,255,.12);color:#e8ecf4;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:12.5px}
+.sk-hero-mini .m-track{position:relative;width:44px;height:9px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
+.sk-hero-mini .m-fill{display:block;height:100%;width:0%;border-radius:99px;
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));transition:width .35s ease}
+.sk-hero-mini .m-ticks{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(90deg,transparent 0,transparent calc(20% - 1.5px),rgba(8,10,14,.75) calc(20% - 1.5px),rgba(8,10,14,.75) 20%)}
+.sk-hero-mini.nodata .m-fill{background:#6b7488}

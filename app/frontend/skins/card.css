@@ -1,0 +1,39 @@
+/* 皮肤 ④ 简报 Card —— 作为其余皮肤的实现范例：
+   1) 所有规则以 .sk-card 作用域；2) 颜色用 var(--tone-a)/var(--tone-b)；
+   3) update(el, usage, settings) 自行处理显示开关（settings.show_*）；4) 提供 mini 任务栏形态 */
+
+.sk-card{width:264px;padding:13px 16px 11px;border-radius:15px;color:#eef2f8;
+  background:linear-gradient(165deg,rgba(17,22,32,.96),rgba(13,16,24,.96));
+  border:1px solid rgba(255,255,255,.1);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+.sk-card.danger{border-color:rgba(239,68,68,.45)}
+.sk-card .head{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.sk-card .title{font-family:var(--f-disp);font-size:14px;font-weight:600}
+.sk-card .title em{font-style:normal;font-size:9.5px;color:#0b1220;
+  background:linear-gradient(135deg,var(--tone-a),#38bdf8);border-radius:99px;padding:1.5px 7px;
+  margin-left:6px;font-weight:700;vertical-align:1px;text-transform:uppercase}
+.sk-card .mail{font-size:10px;color:#707a8e;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sk-card .row{display:flex;align-items:center;gap:9px;margin:7px 0;font-size:11.5px;color:#9aa3b5}
+.sk-card .k{width:50px;flex:none}
+.sk-card .bar{flex:1;height:7px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden}
+.sk-card .bar i{display:block;height:100%;width:0%;border-radius:99px;
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));transition:width .35s ease}
+.sk-card .bar i.wk{background:linear-gradient(90deg,#93c5fd,#3b82f6)}
+.sk-card .row b{font-family:var(--f-num);font-size:13px;color:#e8ecf4;width:44px;text-align:right}
+.sk-card .row.cr b{color:#fbbf24}
+.sk-card .foot{display:flex;align-items:center;gap:6px;margin-top:9px;border-top:1px solid rgba(255,255,255,.07);
+  padding-top:8px;font-size:10.5px;color:#707a8e}
+.sk-card .foot .cd{margin-left:auto}
+.sk-card .foot b{color:#a7b0c2;font-weight:500}
+.sk-card .dot{width:7px;height:7px;border-radius:99px;background:#6b7488;flex:none}
+.sk-card .dot.ok{background:#34d399;box-shadow:0 0 6px #34d399}
+.sk-card .dot.bad{background:#f87171;box-shadow:0 0 6px #f87171}
+.sk-card.danger .danger-flash{animation:skcard-pulse 1.05s ease-in-out infinite}
+@keyframes skcard-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* 任务栏迷你形态 */
+.sk-card-mini{display:flex;align-items:center;gap:8px;padding:5px 12px;border-radius:99px;
+  background:rgba(10,13,20,.92);border:1px solid rgba(255,255,255,.22);color:#f1f4fa;
+  box-shadow:0 4px 16px rgba(0,0,0,.55);font-family:var(--f-num);font-size:13px}
+.sk-card-mini .m-track{width:52px;height:10px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden}
+.sk-card-mini .m-fill{display:block;height:100%;width:0%;border-radius:99px;
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));transition:width .35s ease}

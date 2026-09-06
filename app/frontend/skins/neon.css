@@ -1,0 +1,60 @@
+/* 皮肤 ⑧ 霓虹 Neon —— 深色赛博卡片：渐变字标签、渐变发光大数字、扫光血槽、扫描线覆盖。
+   颜色走 var(--tone-a)/var(--tone-b)：accent=auto 时 JS 保持品牌青紫渐变，低额度(≤20%)转红。
+   开关：show_week / show_credits / show_countdown / show_email 均生效。 */
+
+.sk-neon{
+  --tone-a:#22d3ee;--tone-b:#a78bfa;
+  position:relative;width:296px;padding:14px 17px 12px;border-radius:12px;color:#e9fdff;overflow:hidden;
+  background:linear-gradient(165deg,#04070d,#070b14);
+  border:1px solid color-mix(in srgb,var(--tone-a) 45%,transparent);
+  box-shadow:0 0 0 1px rgba(0,0,0,.6),0 14px 44px rgba(0,0,0,.6),
+    0 0 30px -4px color-mix(in srgb,var(--tone-a) 40%,transparent)}
+.sk-neon.danger{border-color:rgba(239,68,68,.55);
+  box-shadow:0 0 0 1px rgba(0,0,0,.6),0 14px 44px rgba(0,0,0,.6),0 0 38px -4px rgba(239,68,68,.5)}
+.sk-neon::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)}
+.sk-neon .n-top{display:flex;align-items:flex-end;gap:8px;margin-bottom:9px}
+.sk-neon .n-lab{padding-bottom:2px;white-space:nowrap;
+  font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);
+  font-size:11px;letter-spacing:2px;
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.sk-neon .n-num{font-family:var(--f-num,"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif);
+  font-size:30px;font-weight:700;line-height:1;
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 12px color-mix(in srgb,var(--tone-a) 55%,transparent))}
+.sk-neon .n-track{position:relative;height:10px;border-radius:99px;overflow:hidden;
+  background:color-mix(in srgb,var(--tone-a) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--tone-a) 25%,transparent)}
+.sk-neon .n-fill{display:block;height:100%;width:0%;border-radius:99px;position:relative;overflow:hidden;
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));
+  box-shadow:0 0 16px -2px var(--tone-a);transition:width .35s ease}
+.sk-neon .n-fill::after{content:"";position:absolute;inset:0;width:60px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);
+  animation:skneon-sweep 2.6s linear infinite}
+@keyframes skneon-sweep{from{transform:translateX(-70px)}to{transform:translateX(310px)}}
+.sk-neon .n-info{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:7px;
+  font-size:10px;color:#5b7280}
+.sk-neon .n-mail{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:168px}
+.sk-neon .n-cr{white-space:nowrap}
+.sk-neon .n-cr b{font-family:var(--f-num,"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif);
+  font-weight:600;color:#fbbf24}
+.sk-neon .n-sub{display:flex;justify-content:space-between;gap:8px;margin-top:7px;white-space:nowrap;
+  font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);
+  font-size:10.5px;color:#3f7f8f}
+.sk-neon .n-sub b{color:var(--tone-a);font-weight:500}
+.sk-neon.nodata .n-lab{background:none;color:#4b5b68}
+.sk-neon.nodata .n-num{background:none;color:#64748b;filter:none}
+
+/* 任务栏迷你形态：霓虹发光数字 */
+.sk-neon-mini{--tone-a:#22d3ee;--tone-b:#a78bfa;
+  display:flex;align-items:center;justify-content:center;gap:7px;min-width:92px;
+  padding:8px 14px;border-radius:99px;background:rgba(4,7,13,.9);
+  border:1px solid color-mix(in srgb,var(--tone-a) 40%,transparent);
+  box-shadow:0 4px 14px rgba(0,0,0,.4),0 0 14px -4px color-mix(in srgb,var(--tone-a) 60%,transparent)}
+.sk-neon-mini .m-lab{font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);
+  font-size:9.5px;letter-spacing:1.5px;color:color-mix(in srgb,var(--tone-a) 55%,#64748b)}
+.sk-neon-mini .m-num{font-family:var(--f-num,"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif);
+  font-size:13.5px;font-weight:700;color:var(--tone-a);
+  text-shadow:0 0 8px color-mix(in srgb,var(--tone-a) 80%,transparent)}

@@ -1,0 +1,17 @@
+# Rust / Tauri
+app/target/
+app/gen/
+
+# Node
+node_modules/
+
+# 本机工具链配置（含个人 MinGW 路径，勿提交；模板见 config.example.toml）
+app/.cargo/config.toml
+
+# 设计稿（开发期工作产物，不随仓库发布）
+design/
+
+# 临时
+*.log
+.playwright-cli/
+tmp/

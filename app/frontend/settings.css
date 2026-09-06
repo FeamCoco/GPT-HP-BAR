@@ -1,0 +1,64 @@
+:root{
+  --f-ui:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
+  --f-disp:"Segoe UI Variable Display","Segoe UI Semibold","Segoe UI",sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0b0e14;color:#e8ecf4;font-family:var(--f-ui);font-size:13.5px;
+  display:flex;justify-content:center;padding:18px}
+.win{width:100%;max-width:720px}
+
+header{display:flex;align-items:center;gap:10px;padding:4px 2px 14px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:16px}
+.logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#10b981,#0ea5e9);
+  display:flex;align-items:center;justify-content:center;font-size:14px}
+h1{font-family:var(--f-disp);font-size:16px;font-weight:600}
+.ver{color:#8b93a5;font-size:11.5px}
+
+section{background:#11151d;border:1px solid rgba(255,255,255,.07);border-radius:12px;
+  padding:14px 18px;margin-bottom:14px}
+h3{font-size:11px;letter-spacing:2px;color:#8b93a5;font-weight:600;margin-bottom:10px}
+.r{display:flex;align-items:center;gap:12px;padding:7px 0}
+.lab{width:120px;color:#c9d0dd;flex:none}
+.r b{font-family:var(--f-num);min-width:44px;text-align:right}
+input[type=range]{flex:1;accent-color:#10b981;max-width:260px}
+select{background:#171c26;border:1px solid rgba(255,255,255,.12);color:#e8ecf4;
+  border-radius:8px;padding:6px 10px;font-family:var(--f-ui);font-size:12.5px}
+.checks{display:flex;flex-wrap:wrap;gap:10px 22px}
+label{display:flex;align-items:center;gap:7px;cursor:pointer;color:#c9d0dd;padding:5px 0}
+input[type=checkbox]{accent-color:#10b981;width:14px;height:14px}
+
+.src{color:#c9d0dd;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+  border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.6}
+.tip{color:#8b93a5;font-size:11.5px;line-height:1.7;margin-top:10px}
+.tip code{background:rgba(255,255,255,.08);border-radius:4px;padding:1px 6px;font-family:Consolas,monospace}
+
+.btn{background:linear-gradient(135deg,rgba(16,185,129,.2),rgba(14,165,233,.15));
+  border:1px solid rgba(16,185,129,.45);color:#a7f3d0;border-radius:8px;padding:7px 16px;
+  font-size:12.5px;cursor:pointer;font-family:var(--f-ui)}
+.btn:hover{filter:brightness(1.15)}
+.btn.ghost{background:transparent;border-color:rgba(255,255,255,.15);color:#a9b2c4}
+
+footer{display:flex;align-items:center;gap:12px;justify-content:flex-end}
+#saved{color:#6ee7b7;font-size:12px;margin-right:auto}
+
+/* ===== 皮肤预览网格 ===== */
+.skin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));gap:10px;
+  --f-num:"Bahnschrift","Segoe UI Variable Display",sans-serif;
+  --f-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace;
+  --tone-a:#6ee7b7;--tone-b:#10b981}
+.sk-card-pv{position:relative;border:1px solid rgba(255,255,255,.1);border-radius:10px;
+  background:#0e1219;padding:8px;cursor:pointer;user-select:none;
+  transition:border-color .15s,background .15s}
+.sk-card-pv:hover{border-color:rgba(255,255,255,.28)}
+.sk-card-pv.sel{border-color:#10b981;background:rgba(16,185,129,.08)}
+.sk-card-pv.sel::after{content:"✓";position:absolute;top:14px;right:14px;width:18px;height:18px;
+  border-radius:50%;background:#10b981;color:#04140b;font-size:11px;font-weight:700;line-height:18px;
+  text-align:center;z-index:2}
+.pv-stage{position:relative;height:132px;border-radius:8px;overflow:hidden;
+  background:radial-gradient(130% 150% at 18% 0%,#1b2434,#0c0f16)}
+.pv-full{position:absolute;transform-origin:0 0}
+.pv-ministage{position:relative;height:46px;margin-top:6px;border-radius:8px;overflow:hidden;
+  background:linear-gradient(180deg,#0a6a7d,#075666)}  /* 模拟任务栏底色 */
+.pv-mini{position:absolute;transform-origin:0 0}
+.pv-ministage .pv-mini > *{box-shadow:none!important}  /* 裁剪阴影在预览里同样难看 */
+.pv-name{margin-top:7px;text-align:center;font-size:12px;color:#c9d0dd}
+.sk-card-pv.sel .pv-name{color:#a7f3d0}

@@ -1,0 +1,40 @@
+/* 皮肤 ⑩ 像素 Pixel —— FC 风深色卡：直角 + 2px 硬边框、5 颗心（每颗 20%）+ 10 格方块血槽、
+   等宽副行。心/格的 on/off 类由 JS 按剩余% 生成；剩余 ≤20% 时最后一颗亮心闪烁（skpix-blink）。
+   开关：show_week 隐藏 WK、show_countdown 隐藏 RESET；credits/邮箱无对应元素。 */
+
+.sk-pixel{
+  --tone-a:#6ee7b7;--tone-b:#10b981;
+  width:284px;padding:14px 16px 13px;border-radius:5px;color:#e8f0e8;
+  background:#0c0d12;border:2px solid #2c2f3c;
+  box-shadow:0 0 0 4px rgba(0,0,0,.35),0 14px 38px rgba(0,0,0,.55)}
+.sk-pixel .p-title{display:flex;align-items:center;gap:8px;margin-bottom:10px;
+  font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);
+  font-weight:700;font-size:12px;letter-spacing:2px;color:var(--tone-b);white-space:nowrap}
+.sk-pixel .p-title .p-player{font-size:10.5px;letter-spacing:1px;font-weight:400;color:#57655c}
+.sk-pixel.nodata .p-title{color:#57655c}
+.sk-pixel .p-hearts{display:flex;gap:9px;font-size:19px;line-height:1;margin-bottom:11px;
+  color:rgba(255,255,255,.13)}
+.sk-pixel .p-hearts span.on{color:var(--tone-b);
+  text-shadow:0 0 10px color-mix(in srgb,var(--tone-b) 70%,transparent)}
+.sk-pixel .p-hearts span.blink{animation:skpix-blink .9s linear infinite}
+@keyframes skpix-blink{0%,49%{opacity:1}50%,100%{opacity:.2}}
+.sk-pixel .p-blocks{display:flex;gap:3px;margin-bottom:11px}
+.sk-pixel .p-blocks i{flex:1;height:13px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.09)}
+.sk-pixel .p-blocks i.on{background:var(--tone-b);border-color:transparent;box-shadow:0 0 8px -2px var(--tone-b)}
+.sk-pixel .p-sub{display:flex;justify-content:space-between;gap:8px;white-space:nowrap;
+  font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);
+  font-size:10.5px;color:#57655c}
+.sk-pixel .p-sub b{color:var(--tone-b);font-weight:500}
+
+/* 任务栏迷你形态：4 个 6x10 像素方块 + 数字 */
+.sk-pixel-mini{--tone-a:#6ee7b7;--tone-b:#10b981;
+  display:flex;align-items:center;gap:4px;min-width:96px;
+  padding:8px 12px;border-radius:4px;background:#0c0d12;border:2px solid #2c2f3c;
+  /* 像素风实心描边用 outline 保留（3px < 窗口 4px 边距，不会被裁）；
+     模糊阴影被 mini.css 全局禁用——会被窗口矩形裁成方形黑底 */
+  outline:3px solid rgba(0,0,0,.35)}
+.sk-pixel-mini i{flex:none;width:6px;height:10px;background:rgba(255,255,255,.1)}
+.sk-pixel-mini i.on{background:var(--tone-b);box-shadow:0 0 6px -1px var(--tone-b)}
+.sk-pixel-mini .m-num{margin-left:5px;
+  font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);
+  font-size:11.5px;font-weight:700;color:#e8f0e8}

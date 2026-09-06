@@ -1,0 +1,8 @@
+html,body{margin:0;padding:0;background:transparent;overflow:hidden;height:100%;
+  font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
+  display:flex;align-items:center;justify-content:center;user-select:none}
+#root{position:relative}
+/* 窗口只比皮肤元素大 4px：外层 box-shadow 的模糊半径远超边距，会被窗口矩形
+   裁成一圈方形黑底，必须整体禁掉（皮肤内部元素的光晕不受影响）。
+   pixel 皮肤的实心描边用 outline 补偿，见 pixel.css */
+#root > *{box-shadow:none!important}

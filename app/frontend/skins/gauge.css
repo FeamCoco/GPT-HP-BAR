@@ -1,0 +1,31 @@
+/* 皮肤 ⑦ 表盘 Gauge —— 半圆仪表盘：SVG 弧线（stroke=var(--tone-b)，长度=剩余%）+ 弹性指针 + 中心大数字 */
+
+.sk-gauge{display:flex;flex-direction:column;align-items:center;width:212px;padding:8px 14px 11px;border-radius:16px;color:#eef2f8;text-align:center;
+  background:rgba(12,15,20,.86);border:1px solid rgba(255,255,255,.1);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+.sk-gauge .top{display:flex;align-items:center;width:100%;min-height:16px}
+.sk-gauge .hp-mail{font-size:9px;color:#707a8e;font-family:var(--f-mono,"Consolas",monospace);
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:120px}
+.sk-gauge .gauge-svg{width:168px;height:92px;overflow:visible}
+.sk-gauge .g-track{fill:none;stroke:rgba(255,255,255,.09);stroke-width:10;stroke-linecap:round}
+.sk-gauge .g-arc{fill:none;stroke:var(--tone-b);stroke-width:10;stroke-linecap:round;
+  filter:drop-shadow(0 0 6px color-mix(in srgb,var(--tone-b) 60%,transparent));transition:stroke-dasharray .35s ease}
+.sk-gauge .g-tick{stroke:rgba(255,255,255,.22);stroke-width:2}
+.sk-gauge .g-needle{stroke:#f1f4fa;stroke-width:2.5;stroke-linecap:round;transform-origin:84px 80px;
+  transition:transform .4s cubic-bezier(.34,1.4,.64,1)}
+.sk-gauge .g-hub{fill:#f1f4fa}
+.sk-gauge .num{font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:26px;font-weight:700;color:var(--tone-a);margin-top:-8px}
+.sk-gauge .cap{font-size:10.5px;color:#8b93a5;letter-spacing:1px;margin-top:2px}
+.sk-gauge .sub{display:flex;justify-content:center;gap:12px;width:100%;font-size:11px;color:#8b93a5;
+  border-top:1px solid rgba(255,255,255,.08);margin-top:9px;padding-top:7px}
+.sk-gauge .sub b{color:#c3cad8;font-weight:500}
+/* 无数据：弧线变灰、数字变灰 */
+.sk-gauge.nodata .g-arc{stroke:#6b7488;filter:none}
+.sk-gauge.nodata .num{color:#8b93a5}
+
+/* 任务栏迷你形态：22x13 半圆弧 + 数字 */
+.sk-gauge-mini{display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:99px;
+  background:rgba(16,20,28,.88);border:1px solid rgba(255,255,255,.12);color:#e8ecf4;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:12.5px}
+.sk-gauge-mini .m-gauge{width:22px;height:13px;overflow:visible;flex:none}
+.sk-gauge-mini .m-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:2.5;stroke-linecap:round}
+.sk-gauge-mini .m-arc{fill:none;stroke:var(--tone-b);stroke-width:2.5;stroke-linecap:round;transition:stroke-dasharray .35s ease}

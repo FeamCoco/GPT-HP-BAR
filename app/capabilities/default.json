@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "主窗口与设置窗口的默认能力（含拖拽、事件、IPC）",
+  "windows": ["main", "settings", "mini"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position"
+  ]
+}

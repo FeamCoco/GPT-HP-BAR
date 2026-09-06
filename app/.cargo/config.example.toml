@@ -1,0 +1,5 @@
+# windows-gnu 构建模板：复制本文件为同目录 config.toml，并把 linker 改成你机器上的 MinGW-w64 gcc 路径。
+# 免管理员权限的便携版 MinGW-w64 也可（https://winlibs.com/）。
+# 使用官方 MSVC 工具链（rustup 默认 + VS Build Tools）时无需本文件。
+[target.x86_64-pc-windows-gnu]
+linker = "C:/path/to/mingw64/bin/gcc.exe"
