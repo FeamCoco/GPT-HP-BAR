@@ -102,4 +102,4 @@ docs/                # 需求与技术方案（数据源调研、任务栏避让
 
 ## License
 
-TBD（Tauri 2 / Rust 生态，倾向 MIT）
+[MIT](LICENSE) © 2026 FeamCoco

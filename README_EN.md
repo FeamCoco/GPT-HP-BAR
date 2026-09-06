@@ -102,4 +102,4 @@ docs/                # requirements & design notes (data source research, taskba
 
 ## License
 
-TBD (Tauri 2 / Rust ecosystem, MIT leaning)
+[MIT](LICENSE) © 2026 FeamCoco
