@@ -1,6 +1,6 @@
 [package]
 name = "gpt-hp-bar"
-version = "0.1.0"
+version = "0.3.0"
 description = "Codex 剩余额度：悬浮窗 + 任务栏常驻工具"
 license = "MIT"
 edition = "2021"
