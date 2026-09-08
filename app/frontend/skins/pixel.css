@@ -6,7 +6,8 @@
   --tone-a:#6ee7b7;--tone-b:#10b981;
   width:284px;padding:14px 16px 13px;border-radius:5px;color:#e8f0e8;
   background:#0c0d12;border:2px solid #2c2f3c;
-  box-shadow:0 0 0 4px rgba(0,0,0,.35),0 14px 38px rgba(0,0,0,.55)}
+  /* 只留 ≤窗口边距 的实心描边；模糊阴影会被窗口矩形裁成直角渐变底（见 card.css 顶部说明） */
+  box-shadow:0 0 0 4px rgba(0,0,0,.35)}
 .sk-pixel .p-title{display:flex;align-items:center;gap:8px;margin-bottom:10px;
   font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);
   font-weight:700;font-size:12px;letter-spacing:2px;color:var(--tone-b);white-space:nowrap}

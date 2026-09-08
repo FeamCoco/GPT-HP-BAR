@@ -7,10 +7,10 @@
   position:relative;width:296px;padding:14px 17px 12px;border-radius:12px;color:#e9fdff;overflow:hidden;
   background:linear-gradient(165deg,#04070d,#070b14);
   border:1px solid color-mix(in srgb,var(--tone-a) 45%,transparent);
-  box-shadow:0 0 0 1px rgba(0,0,0,.6),0 14px 44px rgba(0,0,0,.6),
-    0 0 30px -4px color-mix(in srgb,var(--tone-a) 40%,transparent)}
+  /* 只留 ≤窗口边距 的实心描边；模糊阴影/光晕会被窗口矩形裁成直角渐变底（见 card.css 顶部说明） */
+  box-shadow:0 0 0 1px rgba(0,0,0,.6)}
 .sk-neon.danger{border-color:rgba(239,68,68,.55);
-  box-shadow:0 0 0 1px rgba(0,0,0,.6),0 14px 44px rgba(0,0,0,.6),0 0 38px -4px rgba(239,68,68,.5)}
+  box-shadow:0 0 0 1px rgba(0,0,0,.6)}
 .sk-neon::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)}
 .sk-neon .n-top{display:flex;align-items:flex-end;gap:8px;margin-bottom:9px}

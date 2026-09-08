@@ -1,7 +1,8 @@
 /* 皮肤 ⑥ 电池 Battery —— 电量隐喻：58x27 电池图标（tone 渐变填充条）+ 大数字 + 副行（5h 窗口/重置/周） */
 
 .sk-battery{display:flex;flex-direction:column;gap:8px;width:228px;padding:9px 16px 12px;border-radius:14px;color:#eef2f8;
-  background:rgba(12,15,20,.84);border:1px solid rgba(255,255,255,.1);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+  background:rgba(12,15,20,.84);border:1px solid rgba(255,255,255,.1)}
+/* 外层模糊阴影会被窗口边距裁成直角渐变底（见 card.css 顶部说明） */
 .sk-battery .top{display:flex;align-items:center;width:100%;min-height:16px}
 .sk-battery .hp-mail{font-size:9px;color:#707a8e;font-family:var(--f-mono,"Consolas",monospace);
   overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:120px}

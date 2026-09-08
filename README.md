@@ -53,7 +53,9 @@ git clone https://github.com/FeamCoco/GPT-HP-BAR.git
 cd GPT-HP-BAR/app
 cargo build --release
 ./target/release/gpt-hp-bar.exe          # 悬浮窗 + 托盘
-./target/release/gpt-hp-bar.exe --probe  # 数据源诊断
+./target/release/gpt-hp-bar.exe --probe          # 数据源诊断
+./target/release/gpt-hp-bar.exe --probe-taskbar # 任务栏占位/空闲区间诊断（挂件避让）
+./target/release/gpt-hp-bar.exe --probe-vd      # 虚拟桌面归属检测诊断
 ```
 
 工具链：Rust stable。官方 MSVC 路线装 [VS Build Tools](https://visualstudio.microsoft.com/zh-hans/downloads/) 即可；

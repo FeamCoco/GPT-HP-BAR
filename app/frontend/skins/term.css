@@ -3,7 +3,8 @@
 .sk-term{width:308px;padding:12px 16px 13px;border-radius:10px;color:#4ade80;
   font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);font-size:13px;
   background:rgba(10,15,10,.94);border:1px solid rgba(74,222,128,.22);
-  box-shadow:0 0 0 1px rgba(0,0,0,.5),0 14px 38px rgba(0,0,0,.55),0 0 26px -6px rgba(74,222,128,.28)}
+  /* 只留 ≤窗口边距 的实心描边；模糊阴影会被窗口矩形裁成直角渐变底（见 card.css 顶部说明） */
+  box-shadow:0 0 0 1px rgba(0,0,0,.5)}
 .sk-term.danger{border-color:rgba(239,68,68,.45)}
 .sk-term .title{display:flex;align-items:center;color:#a7f3d0;margin-bottom:9px;letter-spacing:.5px;font-size:12.5px}
 .sk-term .title .sub{color:#3f6b4f;font-size:11px}

@@ -2,9 +2,12 @@
    1) 所有规则以 .sk-card 作用域；2) 颜色用 var(--tone-a)/var(--tone-b)；
    3) update(el, usage, settings) 自行处理显示开关（settings.show_*）；4) 提供 mini 任务栏形态 */
 
+/* 窗口只比卡片大 ~8px：外层 box-shadow 模糊半径远超边距，会被窗口矩形裁成
+   一圈直角渐变半透明底（主窗口/任务栏挂件同理，见 mini.css 的全局禁用），
+   因此外层禁用阴影、只保留 ≤边距 的实心描边；皮肤内部元素的光晕不受影响 */
 .sk-card{width:264px;padding:13px 16px 11px;border-radius:15px;color:#eef2f8;
   background:linear-gradient(165deg,rgba(17,22,32,.96),rgba(13,16,24,.96));
-  border:1px solid rgba(255,255,255,.1);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+  border:1px solid rgba(255,255,255,.1)}
 .sk-card.danger{border-color:rgba(239,68,68,.45)}
 .sk-card .head{display:flex;align-items:center;gap:8px;margin-bottom:9px}
 .sk-card .title{font-family:var(--f-disp);font-size:14px;font-weight:600}

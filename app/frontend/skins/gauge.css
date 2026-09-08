@@ -1,7 +1,8 @@
 /* 皮肤 ⑦ 表盘 Gauge —— 半圆仪表盘：SVG 弧线（stroke=var(--tone-b)，长度=剩余%）+ 弹性指针 + 中心大数字 */
 
 .sk-gauge{display:flex;flex-direction:column;align-items:center;width:212px;padding:8px 14px 11px;border-radius:16px;color:#eef2f8;text-align:center;
-  background:rgba(12,15,20,.86);border:1px solid rgba(255,255,255,.1);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+  background:rgba(12,15,20,.86);border:1px solid rgba(255,255,255,.1)}
+/* 外层模糊阴影会被窗口边距裁成直角渐变底（见 card.css 顶部说明） */
 .sk-gauge .top{display:flex;align-items:center;width:100%;min-height:16px}
 .sk-gauge .hp-mail{font-size:9px;color:#707a8e;font-family:var(--f-mono,"Consolas",monospace);
   overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:120px}

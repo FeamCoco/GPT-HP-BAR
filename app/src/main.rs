@@ -27,10 +27,15 @@ use windows::Win32::System::Com::{
 #[cfg(windows)]
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Descendants};
 #[cfg(windows)]
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
+#[cfg(windows)]
+use windows::Win32::UI::Shell::{IVirtualDesktopManager, VirtualDesktopManager};
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, FindWindowExW, FindWindowW, GetClassNameW, GetWindowLongPtrW,
-    GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, SetWindowPos, GWL_EXSTYLE,
-    SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_TOPMOST,
+    EnumChildWindows, EnumWindows, FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow,
+    GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, SetWindowPos,
+    ShowWindow, GWL_EXSTYLE, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+    WS_EX_TOPMOST,
 };
 
 /// 托盘句柄，轮询线程里按额度重绘图标
@@ -84,6 +89,39 @@ fn apply_lang(app: &AppHandle, lang: &str) {
 fn main() {
     if std::env::args().any(|a| a == "--probe") {
         datasource::probe();
+        return;
+    }
+    #[cfg(windows)]
+    if std::env::args().any(|a| a == "--probe-taskbar") {
+        taskbar_probe();
+        return;
+    }
+    /// --probe-vd [hwnd]：打印窗口句柄及其是否在当前虚拟桌面（缺省取前台窗口），
+    /// 用于验证虚拟桌面切换检测（与 ensure_on_current_desktop 同一 API）
+    #[cfg(windows)]
+    if std::env::args().nth(1).as_deref() == Some("--probe-vd") {
+        let arg = std::env::args().nth(2).and_then(|a| a.parse::<isize>().ok());
+        let hwnd = arg.map_or_else(
+            || unsafe { GetForegroundWindow() },
+            |a| HWND(a as *mut core::ffi::c_void),
+        );
+        let mgr: windows::core::Result<IVirtualDesktopManager> = unsafe {
+            let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let ok = hr == S_OK || hr == S_FALSE || hr == RPC_E_CHANGED_MODE;
+            if !ok {
+                println!("CoInitializeEx failed: {hr:?}");
+                return;
+            }
+            // 探针一次性进程：不配对 CoUninitialize，接口指针用完即随进程回收
+            CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_INPROC_SERVER)
+        };
+        match mgr {
+            Ok(m) => match unsafe { m.IsWindowOnCurrentVirtualDesktop(hwnd) } {
+                Ok(on) => println!("hwnd {hwnd:?} on_current={}", on.as_bool()),
+                Err(e) => println!("hwnd {hwnd:?} IsWindowOnCurrentVirtualDesktop err: {e}"),
+            },
+            Err(e) => println!("CoCreateInstance VirtualDesktopManager err: {e}"),
+        }
         return;
     }
 
@@ -163,6 +201,19 @@ fn main() {
                 let _ = handle.emit("usage", &u);
                 #[cfg(windows)]
                 {
+                    // 虚拟桌面切换后，可见的悬浮类窗口会被 cloaked 在旧桌面上
+                    // （WS_VISIBLE 仍在，show() 是 no-op）——重挂到当前桌面；
+                    // 用户主动隐藏的（is_visible=false）保持隐藏
+                    for label in ["main", "mini"] {
+                        if let Some(w) = handle.get_webview_window(label) {
+                            if let Ok(h) = w.hwnd() {
+                                let h = HWND(h.0);
+                                if unsafe { IsWindowVisible(h).as_bool() } {
+                                    ensure_on_current_desktop(h);
+                                }
+                            }
+                        }
+                    }
                     let st = handle.state::<AppState>();
                     position_mini(&handle, &st);
                 }
@@ -352,27 +403,23 @@ fn taskbar_band() -> Option<(RECT, Vec<RECT>)> {
         let tray = FindWindowW(w!("Shell_TrayWnd"), None).ok()?;
         let mut tr = RECT::default();
         GetWindowRect(tray, &mut tr).ok()?;
+        // DPI 缩放（96=100%）：兜底预留宽度按逻辑像素换算
+        let dpi = (GetDpiForWindow(tray) as f64 / 96.0).max(1.0);
         let mut occ = Vec::new();
-        let mut has_notify = false;
-        let mut has_start = false;
         for cls in ["TrayNotifyWnd", "Start"] {
             let cls_w = windows::core::HSTRING::from(cls);
             if let Ok(h) = FindWindowExW(Some(tray), None, &cls_w, None) {
                 let mut r = RECT::default();
                 if GetWindowRect(h, &mut r).is_ok() {
-                    if cls == "TrayNotifyWnd" { has_notify = true; }
-                    if cls == "Start" { has_start = true; }
                     occ.push(r);
                 }
             }
         }
-        // 新版 Win11 任务栏是纯 XAML，TrayNotifyWnd/Start 可能不存在 → 保守宽度兜底
-        if !has_notify {
-            occ.push(RECT { left: tr.right - 280, top: tr.top, right: tr.right, bottom: tr.bottom });
-        }
-        if !has_start {
-            occ.push(RECT { left: tr.left, top: tr.top, right: tr.left + 56, bottom: tr.bottom });
-        }
+        // 左右结构保护区：新版 Win11 任务栏是纯 XAML，TrayNotifyWnd/Start 的 rect
+        // 是过期值（可能过窄）或不存在，UIA 也可能临时拿不到 —— 无论探测结果如何
+        // 都按 DPI 缩放预留托盘/开始按钮的逻辑宽度兜底（与实际 rect 并集取更靠左者）
+        occ.push(RECT { left: tr.right - (280.0 * dpi).round() as i32, top: tr.top, right: tr.right, bottom: tr.bottom });
+        occ.push(RECT { left: tr.left, top: tr.top, right: tr.left + (56.0 * dpi).round() as i32, bottom: tr.bottom });
         // 子窗口（TrafficMonitor 等第三方挂件）+ 带内第三方顶层窗
         let mut ctx = EnumCtx { tray, band: tr, pid: std::process::id(), occ };
         let _ = EnumWindows(Some(enum_taskbar_widget), LPARAM(&mut ctx as *mut EnumCtx as isize));
@@ -460,6 +507,33 @@ fn position_mini(app: &AppHandle, state: &State<AppState>) {
 fn position_mini(app: &AppHandle, _state: &State<AppState>) {
     if let Some(win) = app.get_webview_window("mini") {
         let _ = win.hide();
+    }
+}
+
+/// 虚拟桌面修复：切换桌面后窗口只是被 shell "cloaked" 在旧桌面上（WS_VISIBLE 仍在，
+/// 所以 IsWindowVisible 为真、show() 是 no-op）。隐藏再显示会让 shell 把窗口重新
+/// 归入当前桌面；用 SW_SHOWNA 避免抢焦点。
+#[cfg(windows)]
+fn ensure_on_current_desktop(hwnd: HWND) {
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let inited = hr == S_OK || hr == S_FALSE; // CHANGED_MODE 时不能配对 CoUninitialize
+        if inited || hr == RPC_E_CHANGED_MODE {
+            let mgr: windows::core::Result<IVirtualDesktopManager> =
+                CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_INPROC_SERVER);
+            if let Ok(mgr) = mgr {
+                // 对未归位/隐藏窗口会返回 Err——视为"状态未知"，不动
+                if let Ok(on_cur) = mgr.IsWindowOnCurrentVirtualDesktop(hwnd) {
+                    if !on_cur.as_bool() {
+                        let _ = ShowWindow(hwnd, SW_HIDE);
+                        let _ = ShowWindow(hwnd, SW_SHOWNA);
+                    }
+                }
+            }
+            if inited {
+                CoUninitialize();
+            }
+        }
     }
 }
 
@@ -586,5 +660,129 @@ fn update_tray(app: &AppHandle, remaining: Option<f64>) {
     };
     if let Some(t) = tray {
         let _ = t.set_icon(Some(draw_tray(remaining)));
+    }
+}
+
+/// 诊断：打印任务栏带、各来源占位矩形（系统子窗口/第三方顶层窗/UIA 元素）与空闲区间，
+/// 用于排查挂件与托盘图标重叠（--probe-taskbar）
+#[cfg(windows)]
+fn taskbar_probe() {
+    unsafe {
+        let tray = match FindWindowW(w!("Shell_TrayWnd"), None) {
+            Ok(h) => h,
+            Err(_) => {
+                println!("Shell_TrayWnd not found");
+                return;
+            }
+        };
+        let mut tr = RECT::default();
+        if GetWindowRect(tray, &mut tr).is_err() {
+            println!("GetWindowRect failed");
+            return;
+        }
+        println!(
+            "band = ({},{})-({},{})  w={} h={}",
+            tr.left,
+            tr.top,
+            tr.right,
+            tr.bottom,
+            tr.right - tr.left,
+            tr.bottom - tr.top
+        );
+        for cls in ["TrayNotifyWnd", "Start", "MSTaskSwWClass", "ReBarWindow32"] {
+            let cls_w = windows::core::HSTRING::from(cls);
+            match FindWindowExW(Some(tray), None, &cls_w, None) {
+                Ok(h) => {
+                    let mut r = RECT::default();
+                    if GetWindowRect(h, &mut r).is_ok() {
+                        println!("child {cls}: ({},{})-({},{})", r.left, r.top, r.right, r.bottom);
+                    }
+                }
+                Err(_) => println!("child {cls}: <absent>"),
+            }
+        }
+
+        let mut ctx = EnumCtx { tray, band: tr, pid: std::process::id(), occ: Vec::new() };
+        let _ = EnumWindows(Some(enum_taskbar_widget), LPARAM(&mut ctx as *mut EnumCtx as isize));
+        println!("-- third-party topmost ({}):", ctx.occ.len());
+        for r in &ctx.occ {
+            println!("   ({},{})-({},{})", r.left, r.top, r.right, r.bottom);
+        }
+        let base = ctx.occ.len();
+        let _ = EnumChildWindows(Some(tray), Some(enum_tray_child), LPARAM(&mut ctx as *mut EnumCtx as isize));
+        println!("-- tray children (+{}):", ctx.occ.len() - base);
+        for r in &ctx.occ[base..] {
+            println!("   ({},{})-({},{})", r.left, r.top, r.right, r.bottom);
+        }
+        let base = ctx.occ.len();
+        ctx.occ.extend(uia_band_occupancy(tray, tr));
+        println!("-- UIA (+{}):", ctx.occ.len() - base);
+        dump_uia_names(tray, tr);
+
+        // 生产路径（taskbar_band，含左右 DPI 保护带）的空闲区间与锚点
+        let Some((_, occ_prod)) = taskbar_band() else { return };
+        let m = 4i32;
+        let mut ints: Vec<(i32, i32)> = occ_prod.iter().map(|r| (r.left - m, r.right + m)).collect();
+        ints.sort();
+        let mut gaps: Vec<(i32, i32)> = Vec::new();
+        let mut cur = tr.left + m;
+        for (a, b) in ints {
+            if a - cur > 0 {
+                gaps.push((cur, a));
+            }
+            cur = cur.max(b);
+        }
+        if tr.right - m - cur > 0 {
+            gaps.push((cur, tr.right - m));
+        }
+        println!("gaps (m={m}):");
+        for (a, b) in &gaps {
+            println!("   {a}..{b} (w={})", b - a);
+        }
+        if let Some((gl, gr)) = gaps.last() {
+            println!("right-anchor x for w=200: {}", gr - 200);
+            println!("left-anchor x: {gl}");
+        }
+    }
+}
+
+/// UIA 元素名 + 矩形逐条打印（探针专用）
+#[cfg(windows)]
+fn dump_uia_names(tray: HWND, band: RECT) {
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let inited = hr == S_OK || hr == S_FALSE;
+        if inited || hr == RPC_E_CHANGED_MODE {
+            let ua: windows::core::Result<IUIAutomation> =
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER);
+            if let Ok(ua) = ua {
+                if let Ok(root) = ua.ElementFromHandle(tray) {
+                    if let Ok(cond) = ua.CreateTrueCondition() {
+                        if let Ok(arr) = root.FindAll(TreeScope_Descendants, &cond) {
+                            let n = arr.Length().unwrap_or(0);
+                            let bw = (band.right - band.left).max(1);
+                            for i in 0..n {
+                                let Ok(el) = arr.GetElement(i) else { continue };
+                                let name = el
+                                    .CurrentName()
+                                    .map(|b| b.to_string())
+                                    .unwrap_or_default();
+                                let Ok(r) = el.CurrentBoundingRectangle() else { continue };
+                                let full = (r.right - r.left) * 10 >= bw * 9;
+                                println!(
+                                    "   [{}] ({},{})-({},{}) \"{}\"",
+                                    if full { "container" } else { "elem" },
+                                    r.left, r.top, r.right, r.bottom,
+                                    name
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            if inited {
+                CoUninitialize();
+            }
+        }
     }
 }
