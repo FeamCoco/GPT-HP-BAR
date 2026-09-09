@@ -15,3 +15,6 @@ design/
 *.log
 .playwright-cli/
 tmp/
+
+# WorkBuddy 会话本地数据
+.workbuddy/
