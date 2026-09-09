@@ -36,7 +36,9 @@ window.SKINS['card'] = {
     show('.wk-row', s.show_week !== false);
     show('.cr-row', s.show_credits !== false);
     show('.foot', s.show_countdown !== false || true); // foot 还承载状态点，仅关倒计时
-    const cd = q('.cd'); if (cd) cd.style.display = s.show_countdown === false ? 'none' : '';
+    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    const cd = q('.cd');
+    if (cd) cd.style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
 
     q('.b5').style.width = (rem5 == null ? 0 : rem5) + '%';
     q('.n5').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
@@ -49,7 +51,7 @@ window.SKINS['card'] = {
     const m = q('.hp-mail'); m.textContent = HP.mail(u.email); m.title = u.email || '';
     if (s.show_email === false) m.style.display = 'none'; else m.style.display = '';
     const cr = HP.credits(u.credits); q('.nc').textContent = cr || '--';
-    q('.cdv').textContent = HP.dur(ok ? u.primary.resets_in_seconds : null);
+    q('.cdv').textContent = cdVal ?? '--';
 
     const dot = q('.dot'), src = q('.src');
     if (ok) { dot.className = 'dot ok'; src.textContent = u.source; src.title = ''; }

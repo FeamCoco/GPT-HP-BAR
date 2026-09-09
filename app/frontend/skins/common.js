@@ -8,6 +8,10 @@ window.HP = {
     const m = Math.max(0, Math.round(sec / 60));
     return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
   },
+  // 秒 -> "Xh Ym"；无有效数据返回 null（皮肤据此隐藏倒计时片段，而不是显示 "--"）
+  durMaybe(sec) {
+    return sec == null || sec < 0 ? null : HP.dur(sec);
+  },
   // credits 对象 -> 显示文本
   credits(c) {
     if (!c) return null;

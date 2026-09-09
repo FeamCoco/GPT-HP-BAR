@@ -50,13 +50,14 @@ window.SKINS['neon'] = {
     show('.n-info', s.show_email !== false || s.show_credits !== false);
     show('.n-mail', s.show_email !== false);
     show('.n-cr', s.show_credits !== false);
-    show('.n-cdw', s.show_countdown !== false);
+    const cdVal = HP.durMaybe(ok && u.primary ? u.primary.resets_in_seconds : null);
+    show('.n-cdw', s.show_countdown !== false && cdVal != null);
     show('.n-wkw', s.show_week !== false);
 
     const num = q('.n-num');
     num.textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
     q('.n-fill').style.width = (rem5 == null ? 0 : rem5) + '%';
-    q('.n-cd').textContent = HP.dur(ok && u.primary ? u.primary.resets_in_seconds : null);
+    q('.n-cd').textContent = cdVal ?? '--';
     q('.n-wk').textContent = remw == null ? '--%' : Math.round(remw) + '%';
     q('.n-plan').textContent = ok ? (u.plan || '--').toUpperCase() : '--';
     q('.n-crv').textContent = HP.credits(ok ? u.credits : null) || '--';

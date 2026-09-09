@@ -34,8 +34,8 @@ use windows::Win32::UI::Shell::{IVirtualDesktopManager, VirtualDesktopManager};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumChildWindows, EnumWindows, FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow,
     GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, SetWindowPos,
-    ShowWindow, GWL_EXSTYLE, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
-    WS_EX_TOPMOST,
+    ShowWindow, GWL_EXSTYLE, HWND_TOPMOST, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOSIZE,
+    SWP_SHOWWINDOW, WS_EX_TOPMOST,
 };
 
 /// 托盘句柄，轮询线程里按额度重绘图标
@@ -191,6 +191,13 @@ fn main() {
             let handle = app.handle().clone();
             let poll = init_poll.clone();
             thread::spawn(move || loop {
+                // 先落位任务栏挂件再取数：数据源首查可能耗时 10s+（app-server 超时回退），
+                // 不能让挂件干等；此时前端多半已调用 set_window_size，尺寸已就绪
+                #[cfg(windows)]
+                {
+                    let st = handle.state::<AppState>();
+                    position_mini(&handle, &st);
+                }
                 let u = datasource::fetch_all();
                 let remaining = if u.ok {
                     u.primary.used_percent.or(u.secondary.used_percent).map(|used| (100.0 - used).clamp(0.0, 100.0))
@@ -446,9 +453,21 @@ fn position_mini(app: &AppHandle, state: &State<AppState>) {
     }
     let Some((band, occ)) = taskbar_band() else { return };
 
+    // 注意：不能用 outer_size()==0 作为放弃条件——窗口从未 show 过时 tao 侧
+    // 尺寸可能尚未回填（前端 set_window_size 未到达），直接 abort 会造成
+    // "永不显示 -> 尺寸永缺" 的死锁。尺寸不可用时先按占位估算，仍照常 show，
+    // 前端挂载后 syncSize 会把真实尺寸同步回来，下一轮自然校正。
     let sz = win.outer_size().unwrap_or_default();
-    let (mw, mh) = (sz.width as i32, sz.height as i32);
-    if mw <= 0 || mh <= 0 { return; }
+    let (mut mw, mut mh) = (sz.width as i32, sz.height as i32);
+    let unmeasured = mw <= 0 || mh <= 0;
+    if unmeasured {
+        // 保守估计（逻辑 px * 主屏缩放），只影响首次落位，之后会被真实尺寸替代
+        let scale = app.primary_monitor().ok().flatten()
+            .map(|m| m.scale_factor())
+            .unwrap_or(1.0);
+        mw = (160.0 * scale).round() as i32;
+        mh = (48.0 * scale).round() as i32;
+    }
 
     let m = 4i32;
     let mut ints: Vec<(i32, i32)> = occ.iter().map(|r| (r.left - m, r.right + m)).collect();
@@ -497,7 +516,18 @@ fn position_mini(app: &AppHandle, state: &State<AppState>) {
 
     if let Ok(hwnd) = win.hwnd() {
         unsafe {
-            let _ = SetWindowPos(HWND(hwnd.0), None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            // HWND_TOPMOST：挂件必须稳定压在任务栏（同为 topmost）之上，否则会被
+            // 任务栏整体遮挡（IsWindowVisible 仍为 true 但完全不可见）；
+            // SWP_SHOWWINDOW 原子显示，show() 仅作 Tauri 侧状态兜底
+            let _ = SetWindowPos(
+                HWND(hwnd.0),
+                Some(HWND_TOPMOST),
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
         }
     }
     let _ = win.show();

@@ -38,8 +38,9 @@ window.SKINS['battery'] = {
 
     q('.fill').style.width = (rem5 == null ? 0 : rem5) + '%';
     q('.num').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
-    q('.cdv').textContent = HP.dur(ok ? u.primary.resets_in_seconds : null);
-    q('.cdw').style.display = s.show_countdown === false ? 'none' : '';
+    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    q('.cdv').textContent = cdVal ?? '--';
+    q('.cdw').style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
     if (s.show_week !== false) q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
     q('.wk').style.display = s.show_week === false ? 'none' : '';
     // show_credits：电池无 credits 行，忽略

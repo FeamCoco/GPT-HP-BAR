@@ -39,7 +39,8 @@ window.SKINS['hero'] = {
     q('.b5').style.width = (rem5 == null ? 0 : rem5) + '%';
     q('.n5').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
     q('.n5').classList.toggle('danger-flash', rem5 != null && rem5 <= 20);
-    q('.cdv').textContent = HP.dur(ok ? u.primary.resets_in_seconds : null);
+    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    q('.cdv').textContent = cdVal ?? '--';
     if (s.show_week !== false) {
       q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
     }
@@ -48,7 +49,7 @@ window.SKINS['hero'] = {
     q('.win').style.display = ok ? '' : 'none';
     q('.nodata').style.display = ok ? 'none' : '';
     q('.wk').style.display = (ok && s.show_week !== false) ? '' : 'none';
-    q('.cdw').style.display = s.show_countdown === false ? 'none' : '';
+    q('.cdw').style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
 
     const m = q('.hp-mail'); const txt = HP.mail(u.email);
     m.textContent = txt; m.title = u.email || '';

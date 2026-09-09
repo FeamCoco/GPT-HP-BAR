@@ -32,13 +32,14 @@ window.SKINS['glass'] = {
     el.classList.toggle('nodata', !ok);
 
     q('.n5').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
-    q('.cdv').textContent = HP.dur(ok ? u.primary.resets_in_seconds : null);
+    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    q('.cdv').textContent = cdVal ?? '--';
     if (s.show_week !== false) {
       q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
     }
 
     // 开关：倒计时 / 周；分隔线随两侧内容显隐
-    const cdOn = s.show_countdown !== false;
+    const cdOn = s.show_countdown !== false && cdVal != null;
     const wkOn = s.show_week !== false;
     q('.cd').style.display = cdOn ? '' : 'none';
     q('.week').style.display = wkOn ? '' : 'none';

@@ -44,8 +44,9 @@ window.SKINS['liquid'] = {
 
     q('.l-num').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
     q('.l-rem').textContent = this.remainTxt(ok && u.primary ? u.primary.window_minutes : null, rem5);
-    q('.l-cd').textContent = HP.dur(ok && u.primary ? u.primary.resets_in_seconds : null);
-    q('.l-cdseg').style.display = s.show_countdown === false ? 'none' : '';
+    const cdVal = HP.durMaybe(ok && u.primary ? u.primary.resets_in_seconds : null);
+    q('.l-cd').textContent = cdVal ?? '--';
+    q('.l-cdseg').style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
   },
 
   updateMini(el, u, s) {

@@ -34,9 +34,10 @@ window.SKINS['tile'] = {
 
     q('.nv').textContent = rem == null ? '--' : String(Math.round(rem));
     q('.fill').style.width = (rem == null ? 0 : rem) + '%';
-    q('.cdv').textContent = HP.dur(ok ? u.primary.resets_in_seconds : null);
-    // 倒计时行可关（磁贴 sub 行仅承载重置倒计时）
-    q('.sub').style.display = s.show_countdown === false ? 'none' : '';
+    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    q('.cdv').textContent = cdVal ?? '--';
+    // 倒计时行可关（磁贴 sub 行仅承载重置倒计时），无数据时同样隐藏
+    q('.sub').style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
     // show_week / show_credits：磁贴无对应行，忽略
 
     const m = q('.hp-mail'); const txt = HP.mail(u.email);

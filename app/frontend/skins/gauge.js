@@ -47,9 +47,10 @@ window.SKINS['gauge'] = {
     // 指针：0% -> -90°（左端），100% -> +90°（右端）
     q('.g-needle').style.transform = 'rotate(' + (rem5 == null ? -90 : rem5 * 1.8 - 90) + 'deg)';
     q('.num').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
-    q('.cdv').textContent = HP.dur(ok ? u.primary.resets_in_seconds : null);
+    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    q('.cdv').textContent = cdVal ?? '--';
 
-    const cdOn = s.show_countdown !== false, wkOn = s.show_week !== false;
+    const cdOn = s.show_countdown !== false && cdVal != null, wkOn = s.show_week !== false;
     q('.cdw').style.display = cdOn ? '' : 'none';
     if (wkOn) q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
     q('.wk').style.display = wkOn ? '' : 'none';

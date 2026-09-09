@@ -144,21 +144,59 @@ fn http_get_json(url: &str, bearer: &str, account_id: Option<&str>) -> Result<Va
     resp.json().map_err(|e| format!("{} 解析失败: {}", url, e))
 }
 
-/// 宽容解析 wham/usage 响应：rate_limits | rate_limit 两种拼写都认
+/// 宽容数值提取：int/float 都收（serde 的 as_i64 遇到 4520.0 这类浮点会返回 None，
+/// 曾导致倒计时永远显示 "--"）；字符串数字也兜底
+fn num(v: &Value) -> Option<f64> {
+    match v {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.trim().trim_end_matches('%').parse::<f64>().ok(),
+        _ => None,
+    }
+}
+
+/// 宽容解析窗口重置时间（秒）：兼容多种字段名/单位/绝对时间戳
+fn resets_in_seconds(w: &Value) -> Option<i64> {
+    // 相对秒数：resets_in_seconds / reset_after_seconds / resets_after_seconds
+    for k in ["resets_in_seconds", "reset_after_seconds", "resets_after_seconds", "reset_in_seconds"] {
+        if let Some(v) = w.get(k).and_then(num) {
+            return Some(v.round() as i64);
+        }
+    }
+    // 相对分钟
+    for k in ["resets_in_minutes", "reset_after_minutes", "resets_in_minutes_int"] {
+        if let Some(v) = w.get(k).and_then(num) {
+            return Some((v * 60.0).round() as i64);
+        }
+    }
+    // 绝对时间戳（秒/毫秒）：换算成剩余秒数
+    for k in ["reset_at", "resets_at", "reset_timestamp"] {
+        if let Some(v) = w.get(k).and_then(num) {
+            let now = now_unix() as f64;
+            let ts = if v > 1.0e12 { v / 1000.0 } else { v }; // 毫秒时间戳归一
+            let d = (ts - now).round() as i64;
+            return Some(d.max(0));
+        }
+    }
+    None
+}
+
+/// 宽容解析 wham/usage 响应：rate_limits | rate_limit 两种拼写都认；
+/// 窗口键 primary_window|primary 与 secondary_window|secondary 都认
+/// （codex app-server 的 account/rateLimits/read 用的是不带 _window 后缀的键）
 fn parse_wham(v: &Value) -> (WindowUsage, WindowUsage, Option<Value>) {
     let rl = v.get("rate_limits").or_else(|| v.get("rate_limit")).unwrap_or(&Value::Null);
-    let win = |key: &str| {
-        let w = rl.get(key).unwrap_or(&Value::Null);
+    let win = |keys: &[&str]| {
+        let w = keys.iter().find_map(|k| rl.get(k)).unwrap_or(&Value::Null);
         WindowUsage {
-            used_percent: w.get("used_percent").and_then(|x| x.as_f64()),
-            window_minutes: w.get("window_minutes").and_then(|x| x.as_u64()),
-            resets_in_seconds: w.get("resets_in_seconds").and_then(|x| x.as_i64())
-                .or_else(|| w.get("resets_in_minutes").and_then(|x| x.as_i64()).map(|m| m * 60)),
+            used_percent: w.get("used_percent").and_then(num)
+                .or_else(|| w.get("used_percent_human").and_then(num)),
+            window_minutes: w.get("window_minutes").and_then(num).map(|m| m.round() as u64),
+            resets_in_seconds: resets_in_seconds(w),
         }
     };
     let credits = v.get("credits").cloned()
         .or_else(|| v.get("credits_balance").map(|b| serde_json::json!({ "balance": b })));
-    (win("primary_window"), win("secondary_window"), credits)
+    (win(&["primary_window", "primary"]), win(&["secondary_window", "secondary"]), credits)
 }
 
 fn fetch_rest(auth: &Auth, account_id: Option<&str>) -> Result<Usage, String> {

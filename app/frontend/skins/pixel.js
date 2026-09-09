@@ -48,12 +48,13 @@ window.SKINS['pixel'] = {
     this.setHearts(el, rem5);
     this.setBlocks(el, rem5);
 
-    q('.p-cd').textContent = HP.dur(ok && u.primary ? u.primary.resets_in_seconds : null);
+    const cdVal = HP.durMaybe(ok && u.primary ? u.primary.resets_in_seconds : null);
+    q('.p-cd').textContent = cdVal ?? '--';
     q('.p-wk').textContent = remw == null ? '--' : Math.round(remw);
     q('.p-hp').textContent = rem5 == null ? '--' : Math.round(rem5);
 
     const show = (sel, on) => { const n = q(sel); if (n) n.style.display = on ? '' : 'none'; };
-    show('.p-cdw', s.show_countdown !== false);
+    show('.p-cdw', s.show_countdown !== false && cdVal != null);
     show('.p-wkw', s.show_week !== false);
   },
 

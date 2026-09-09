@@ -42,12 +42,13 @@ window.SKINS['term'] = {
     q('.plan').textContent = ok ? String(u.plan || '--').toLowerCase() : '--';
     q('.err').style.display = ok ? 'none' : '';
     q('.wk-row').style.display = s.show_week === false ? 'none' : '';
-    const cdOn = s.show_countdown !== false;
+    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    const cdOn = s.show_countdown !== false && cdVal != null;
     const crOn = s.show_credits !== false;
     q('.cdw').style.display = cdOn ? '' : 'none';
     q('.cr-txt').style.display = crOn ? '' : 'none';
-    q('.sep1').style.display = ((ok || cdOn) && crOn) ? '' : 'none';
-    q('.cdv').textContent = HP.dur(ok ? u.primary.resets_in_seconds : null);
+    q('.sep1').style.display = (cdOn && crOn) ? '' : 'none';
+    q('.cdv').textContent = cdVal ?? '--';
     const cr = HP.credits(u.credits);
     q('.nc').textContent = cr || '--';
   },
