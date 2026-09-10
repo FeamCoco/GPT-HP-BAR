@@ -59,6 +59,11 @@ cargo build --release
 Toolchain: Rust stable. The standard MSVC route just needs [VS Build Tools](https://visualstudio.microsoft.com/downloads/);
 no admin rights? Use a portable [MinGW-w64](https://winlibs.com/) — copy `app/.cargo/config.example.toml` to `config.toml` in the same folder and point it at your gcc.
 
+> **A MinGW-built exe cannot be copied on its own**: it links `WebView2Loader.dll` dynamically, so the DLL
+> from `app/target/release/WebView2Loader.dll` must sit next to it (otherwise it fails at startup with
+> "WebView2Loader.dll was not found"). MSVC builds link the loader statically, which is why the single-file
+> package in Releases has no such requirement.
+
 ## The 10 themes
 
 | # | Name | Style |

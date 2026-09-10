@@ -63,6 +63,10 @@ cargo build --release
 工具链：Rust stable。官方 MSVC 路线装 [VS Build Tools](https://visualstudio.microsoft.com/zh-hans/downloads/) 即可；
 没有管理员权限时可用便携版 [MinGW-w64](https://winlibs.com/)——把 `app/.cargo/config.example.toml` 复制为同目录 `config.toml` 并填入你的 gcc 路径。
 
+> **MinGW 构建的 exe 不能单独拷走**：它动态依赖 `WebView2Loader.dll`，必须和
+> `app/target/release/WebView2Loader.dll` 放在同一目录（否则启动即报"找不到 WebView2Loader.dll"）。
+> MSVC 构建会把 loader 静态链入，所以 Releases 里的单文件包没有这个限制。
+
 ## 10 套皮肤
 
 | # | 名称 | 风格 |

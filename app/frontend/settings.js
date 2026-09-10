@@ -4,6 +4,12 @@ const { listen } = window.__TAURI__.event;
 
 const $ = (s) => document.querySelector(s);
 const T = (k) => window.i18nT(k);
+
+// 版本号以运行时配置（tauri.conf.json 的 version）为准，避免 HTML 里写死的值长期不同步
+// （历史上它停在 v0.3）。拿不到就保留 HTML 里的兜底值。
+Promise.resolve(window.__TAURI__.app.getVersion())
+  .then((v) => { if (v) $(".ver").textContent = "v" + v; })
+  .catch(() => {});
 const FIELDS = ["lang", "skin", "font_scale", "opacity", "accent", "show_week", "show_credits", "show_countdown", "show_email", "poll_secs", "autostart", "mini_enabled", "mini_pos"];
 
 let loading = true;

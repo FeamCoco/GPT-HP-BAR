@@ -443,12 +443,31 @@ unsafe extern "system" fn enum_tray_child(hwnd: HWND, lparam: LPARAM) -> BOOL {
 /// UIA 读取任务栏真实可见内容矩形（XAML 元素）。
 /// Win11 新版任务栏整个是 XAML 渲染：Start/任务视图/居中图标群都没有对应的 Win32 子窗口
 /// （MSTaskSwWClass 的 rect 是过期的），只有 UIA 元素树能拿到真实矩形；
-/// 失败时返回空 vec，上层退回窗口结构结果。
+/// 失败时返回空列表 + false，上层退回窗口结构结果。
 #[cfg(windows)]
-fn uia_band_occupancy(tray: HWND, band: RECT) -> Vec<RECT> {
-    let mut out: Vec<RECT> = Vec::new();
-    // 带类名的中间结果：用于事后剔除"不可见宿主窗口"（见下方 retains）
-    let mut tmp: Vec<(String, RECT)> = Vec::new();
+struct UiaItem {
+    /// 类名（用于剔除不可见宿主窗口）
+    cls: String,
+    /// AutomationId（用于精确识别 StartButton / SystemTray 按钮）
+    aid: String,
+    rect: RECT,
+}
+
+#[cfg(windows)]
+impl UiaItem {
+    /// 是否"真内容"（图标按钮/任务视图/托盘按钮）——判断 UIA 是否真的可用
+    fn is_content(&self) -> bool {
+        self.cls.contains("TaskListButton")
+            || self.cls.contains("ToggleButton")
+            || self.cls.contains("SystemTray")
+    }
+}
+
+#[cfg(windows)]
+fn uia_band_occupancy(tray: HWND, band: RECT) -> (Vec<UiaItem>, bool) {
+    // 带类名/AutomationId 的中间结果：用于事后剔除"不可见宿主窗口"（见下方 retains），
+    // 以及取开始按钮/托盘按钮的权威矩形
+    let mut tmp: Vec<UiaItem> = Vec::new();
     unsafe {
         let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
         let inited = hr == S_OK || hr == S_FALSE; // CHANGED_MODE 时不能配对 CoUninitialize
@@ -483,7 +502,11 @@ fn uia_band_occupancy(tray: HWND, band: RECT) -> Vec<RECT> {
                                     .CurrentClassName()
                                     .map(|b| b.to_string())
                                     .unwrap_or_default();
-                                tmp.push((cls, r));
+                                let aid = el
+                                    .CurrentAutomationId()
+                                    .map(|b| b.to_string())
+                                    .unwrap_or_default();
+                                tmp.push(UiaItem { cls, aid, rect: r });
                             }
                         }
                     }
@@ -498,14 +521,11 @@ fn uia_band_occupancy(tray: HWND, band: RECT) -> Vec<RECT> {
     // 从占位里去掉——`Windows.UI.Input.InputSite.WindowClass` 这类输入宿主横跨大半个
     // 任务栏却不显示任何东西，留着会把空白区误判成占用，害得挂件无处可落。
     // 反过来，若没拿到任何按钮（UIA 部分失效），就保守地全部保留。
-    let has_content = tmp.iter().any(|(c, _)| {
-        c.contains("TaskListButton") || c.contains("ToggleButton") || c.contains("SystemTray")
+    let has_content = tmp.iter().any(|i| i.is_content());
+    tmp.retain(|i| {
+        !(has_content && SYS_CHILD_CLASSES.iter().any(|s| i.cls.eq_ignore_ascii_case(s)))
     });
-    tmp.retain(|(c, _)| {
-        !(has_content && SYS_CHILD_CLASSES.iter().any(|s| c.eq_ignore_ascii_case(s)))
-    });
-    out.extend(tmp.into_iter().map(|(_, r)| r));
-    out
+    (tmp, has_content)
 }
 
 /// 任务栏带的测量结果
@@ -531,21 +551,82 @@ fn taskbar_band() -> Option<BandInfo> {
         GetWindowRect(tray, &mut tr).ok()?;
         // DPI 缩放（96=100%）：兜底预留宽度按逻辑像素换算
         let scale = (GetDpiForWindow(tray) as f64 / 96.0).max(1.0);
-        let mut occ = Vec::new();
+        // 系统子窗口 rect：Win11 新版任务栏是纯 XAML，这些 rect 可能过期（见下方判定）
+        let mut start_child: Option<RECT> = None;
+        let mut tray_child: Option<RECT> = None;
         for cls in ["TrayNotifyWnd", "Start"] {
             let cls_w = windows::core::HSTRING::from(cls);
             if let Ok(h) = FindWindowExW(Some(tray), None, &cls_w, None) {
                 let mut r = RECT::default();
                 if GetWindowRect(h, &mut r).is_ok() {
-                    occ.push(r);
+                    if cls == "Start" {
+                        start_child = Some(r);
+                    } else {
+                        tray_child = Some(r);
+                    }
                 }
             }
         }
-        // 左右结构保护区：新版 Win11 任务栏是纯 XAML，TrayNotifyWnd/Start 的 rect
-        // 是过期值（可能过窄）或不存在，UIA 也可能临时拿不到 —— 无论探测结果如何
-        // 都按 DPI 缩放预留托盘/开始按钮的逻辑宽度兜底（与实际 rect 并集取更靠左者）
-        occ.push(RECT { left: tr.right - (280.0 * scale).round() as i32, top: tr.top, right: tr.right, bottom: tr.bottom });
-        occ.push(RECT { left: tr.left, top: tr.top, right: tr.left + (56.0 * scale).round() as i32, bottom: tr.bottom });
+        // UIA 补充真实 XAML 内容（Win11 居中图标群等）——比窗口结构精确，也是
+        // 开始按钮/托盘可见按钮的唯一权威来源
+        let (uia_items, _uia_content) = uia_band_occupancy(tray, tr);
+        let uia_count = uia_items.len();
+        let uia_start = uia_items
+            .iter()
+            .find(|i| i.aid == "StartButton")
+            .map(|i| i.rect);
+        let uia_tray_left = uia_items
+            .iter()
+            .filter(|i| i.cls.contains("SystemTray"))
+            .map(|i| i.rect.left)
+            .min();
+
+        let mut occ = Vec::new();
+
+        // ---- 左端：开始按钮 ----
+        // Win11 居中任务栏上 `Start` 子窗口的 rect 可能是过期值（实测见过它停在任务栏
+        // 最左边缘），照抄会把左侧一整片空白误判成占用，把"靠左"顶到 90+ 逻辑 px 之外。
+        // UIA 的 StartButton 才是权威值：两者不一致时以 UIA 为准。
+        let start = match (start_child, uia_start) {
+            (Some(c), Some(u)) if c.left != u.left || c.right != u.right => Some(u),
+            (Some(c), _) => Some(c),
+            (None, Some(u)) => Some(u),
+            (None, None) => None,
+        };
+        match start {
+            Some(r) => occ.push(r),
+            // 真的两边都拿不到（UIA 失效 + 无 Start 子窗口）才按逻辑宽度硬预留；
+            // 否则左端那片空白就是可用的落位空间，不该凭空占掉
+            None => occ.push(RECT {
+                left: tr.left,
+                top: tr.top,
+                right: tr.left + (56.0 * scale).round() as i32,
+                bottom: tr.bottom,
+            }),
+        }
+
+        // ---- 右端：托盘 ----
+        // TrayNotifyWnd 的 rect 自带内部留白（实测比第一个可见托盘按钮靠左约 36 逻辑 px），
+        // 拿它当边界会让"靠右"离托盘白白多出这一段。UIA 能给出托盘可见按钮、且位置就在
+        // rect 左边界附近时改用可见按钮当边界；差得太远说明 UIA 只拿到了部分托盘元素，
+        // 仍退回 rect（宁可多留一层余量，也不能压住图标）。
+        let tray_left = match (tray_child, uia_tray_left) {
+            // UIA 可见按钮就在 rect 左边界附近 → 用它（rect 的左留白不再计入）
+            (Some(t), Some(u)) if u >= t.left && u <= t.left + (120.0 * scale).round() as i32 => u,
+            // 否则退回 rect；两者都没有才按逻辑宽度硬预留
+            (Some(t), _) => t.left,
+            (None, Some(u)) => u,
+            (None, None) => tr.right - (280.0 * scale).round() as i32,
+        };
+        // 托盘整体作为一个块，一直包到任务栏右端：托盘图标之间的视觉空隙（通知图标群与
+        // 时钟之间常有一大段空白）绝不能被当成可落位的空隙，否则挂件会落进托盘里
+        occ.push(RECT {
+            left: tray_left,
+            top: tr.top,
+            right: tr.right,
+            bottom: tr.bottom,
+        });
+
         // 子窗口（TrafficMonitor 等第三方挂件）+ 带内第三方顶层窗
         let mut ctx = EnumCtx { tray, band: tr, pid: std::process::id(), occ };
         let _ = EnumWindows(Some(enum_taskbar_widget), LPARAM(&mut ctx as *mut EnumCtx as isize));
@@ -554,10 +635,7 @@ fn taskbar_band() -> Option<BandInfo> {
             Some(enum_tray_child),
             LPARAM(&mut ctx as *mut EnumCtx as isize),
         );
-        // UIA 补充真实 XAML 内容（Win11 居中图标群等）——比窗口结构精确
-        let uia = uia_band_occupancy(tray, tr);
-        let uia_count = uia.len();
-        ctx.occ.extend(uia);
+        ctx.occ.extend(uia_items.iter().map(|i| i.rect));
         Some(BandInfo { band: tr, occ: ctx.occ, scale, uia_count })
     }
 }
@@ -604,10 +682,14 @@ fn merge_x_intervals(rects: &[RECT]) -> Vec<(i32, i32)> {
 fn plan_mini(info: &BandInfo, mw: i32, mh: i32, pos: &str) -> (i32, i32, Vec<(i32, i32)>, i32) {
     let band = info.band;
     let scale = info.scale;
-    let mut pad = (PAD_LOGICAL * scale).round() as i32;
+    // 任务栏两端的间隙：两端不会有系统图标凭空冒出来（图标只在带内增删），
+    // 所以只留视觉间隙，不叠加保守余量 —— 否则"靠左/靠右"会被白白顶开
+    let end_pad = (PAD_LOGICAL * scale).round() as i32;
+    let mut pad = end_pad;
     if info.uia_count == 0 {
         // UIA 拿不到（COM 忙/超时）：占位只剩窗口结构，而 Win11 上窗口 rect 可能是
-        // 过期值（图标群/托盘真实范围更大）——再追加一层保守余量
+        // 过期值（图标群/托盘真实范围更大）——内部边界（图标群/托盘两侧）再追加一层
+        // 保守余量；两端不受影响，见 end_pad
         pad += (UIA_FAIL_PAD_LOGICAL * scale).round() as i32;
     }
     let grow = (ICON_GROW_LOGICAL * scale).round() as i32;
@@ -636,7 +718,7 @@ fn plan_mini(info: &BandInfo, mw: i32, mh: i32, pos: &str) -> (i32, i32, Vec<(i3
 
     // 再按 pad 收缩出真正可用的空隙
     let mut gaps: Vec<(i32, i32)> = Vec::new();
-    let mut cur = band.left + pad;
+    let mut cur = band.left + end_pad;
     for (a, b) in merged.iter().copied() {
         let (a, b) = (a - pad, b + pad);
         if a - cur > 0 {
@@ -644,15 +726,15 @@ fn plan_mini(info: &BandInfo, mw: i32, mh: i32, pos: &str) -> (i32, i32, Vec<(i3
         }
         cur = cur.max(b);
     }
-    if band.right - pad - cur > 0 {
-        gaps.push((cur, band.right - pad));
+    if band.right - end_pad - cur > 0 {
+        gaps.push((cur, band.right - end_pad));
     }
     if gaps.is_empty() {
-        gaps.push((band.left + pad, band.right - pad));
+        gaps.push((band.left + end_pad, band.right - end_pad));
     }
 
-    let a_left = gaps.first().map(|g| g.0).unwrap_or(band.left + pad);
-    let a_right = gaps.last().map(|g| g.1 - mw).unwrap_or(band.right - pad - mw);
+    let a_left = gaps.first().map(|g| g.0).unwrap_or(band.left + end_pad);
+    let a_right = gaps.last().map(|g| g.1 - mw).unwrap_or(band.right - end_pad - mw);
     let a_center = (band.left + band.right) / 2 - mw / 2;
     let ax = match pos {
         "left" => a_left,
@@ -683,7 +765,7 @@ fn plan_mini(info: &BandInfo, mw: i32, mh: i32, pos: &str) -> (i32, i32, Vec<(i3
                 .iter()
                 .copied()
                 .max_by_key(|(gl, gr)| gr - gl)
-                .unwrap_or((band.left + pad, band.right - pad));
+                .unwrap_or((band.left + end_pad, band.right - end_pad));
             gl + ((gr - gl - mw) / 2).max(0)
         }
     };
@@ -696,6 +778,49 @@ fn plan_mini(info: &BandInfo, mw: i32, mh: i32, pos: &str) -> (i32, i32, Vec<(i3
 #[cfg(windows)]
 fn rect_free(x: i32, mw: i32, occ: &[RECT]) -> bool {
     occ.iter().all(|r| x + mw <= r.left || x >= r.right)
+}
+
+/// 最近一次落位指纹（x, y, mw）：仅用于"位置变化时才写诊断"
+#[cfg(windows)]
+static LAST_MINI_DIAG: Mutex<(i32, i32, i32)> = Mutex::new((i32::MIN, 0, 0));
+
+/// 把每次落位的关键数据追加到 %APPDATA%/GPT-HP-BAR/mini-diag.log（仅在落位变化时写）。
+/// 换机器排查时看不到实机画面，这个文件就是唯一的一手证据：band / 缩放 / UIA 数量 /
+/// 占位数 / 空隙 / 最终落位一应俱全（`t` 为 Unix 秒）。超过 64KB 直接重写，避免无限增长。
+#[cfg(windows)]
+fn diag_mini(info: &BandInfo, pos: &str, x: i32, y: i32, mw: i32, gaps: &[(i32, i32)], pad: i32) {
+    let Ok(mut last) = LAST_MINI_DIAG.lock() else {
+        return;
+    };
+    if (last.0, last.1, last.2) == (x, y, mw) {
+        return;
+    }
+    *last = (x, y, mw);
+    drop(last);
+    let p = settings::config_path().with_file_name("mini-diag.log");
+    if std::fs::metadata(&p).map(|m| m.len() > 64 * 1024).unwrap_or(false) {
+        let _ = std::fs::remove_file(&p);
+    }
+    let b = info.band;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = format!(
+        "[{pos}] t={ts} x={x}..{} y={y} mw={mw} pad={pad} scale={:.2} uia_count={} occ={} band=({},{})-({},{}) gaps={gaps:?}\n",
+        x + mw,
+        info.scale,
+        info.uia_count,
+        info.occ.len(),
+        b.left,
+        b.top,
+        b.right,
+        b.bottom
+    );
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
+        let _ = f.write_all(line.as_bytes());
+    }
 }
 
 /// 任务栏挂件定位：顶层置顶窗浮在任务栏带上（v1 简化版，视觉等同嵌入），
@@ -745,6 +870,7 @@ fn position_mini(app: &AppHandle, state: &State<AppState>) {
         }
         // 两次校验都不过：仍按计划位置落位——宁可位置略有偏差，也不能让挂件消失
     }
+    diag_mini(&info, s.mini_pos.as_str(), x, y, mw, &gaps, pad);
 
     if let Ok(hwnd) = win.hwnd() {
         unsafe {
@@ -977,8 +1103,9 @@ fn taskbar_probe() {
             println!("   ({},{})-({},{})", r.left, r.top, r.right, r.bottom);
         }
         let base = ctx.occ.len();
-        ctx.occ.extend(uia_band_occupancy(tray, tr));
-        println!("-- UIA (+{}):", ctx.occ.len() - base);
+        let (uia_items, uia_content) = uia_band_occupancy(tray, tr);
+        ctx.occ.extend(uia_items.iter().map(|i| i.rect));
+        println!("-- UIA (+{}, content={}):", ctx.occ.len() - base, uia_content);
         dump_uia_names(tray, tr);
 
         // 生产路径（taskbar_band + plan_mini）的落位与净空
@@ -989,6 +1116,11 @@ fn taskbar_probe() {
             info.uia_count,
             info.occ.len()
         );
+        // 生产路径真正使用的占位块（含左右端兜底块是否被启用）
+        println!("-- effective occ blocks:");
+        for (a, b) in merge_x_intervals(&info.occ) {
+            println!("   {a}..{b}");
+        }
         for pos in ["right", "center", "left"] {
             // card 皮肤挂件实测约 126x44 逻辑 px（含窗口 8px 透明留白）
             let mw = (126.0 * info.scale).round() as i32;
