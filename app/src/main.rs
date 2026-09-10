@@ -9,12 +9,14 @@
 mod datasource;
 mod settings;
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalSize, State, WebviewUrl, WebviewWindowBuilder,
+};
 
 #[cfg(windows)]
 use windows::core::{BOOL, w};
@@ -38,6 +40,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_SHOWWINDOW, WS_EX_TOPMOST,
 };
 
+/// 诊断子命令入口：探针进程声明 DPI 感知。
+/// 否则（未声明 DPI 感知时）GetWindowRect 返回被 Windows 虚拟化的逻辑坐标
+/// （3840 物理屏上得到 2560），与实机截图对不上，没法交叉核对。
+#[cfg(windows)]
+fn probe_dpi_aware() {
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware();
+    }
+}
+
 /// 托盘句柄，轮询线程里按额度重绘图标
 struct TrayState(Mutex<Option<tauri::tray::TrayIcon>>);
 
@@ -45,6 +57,10 @@ struct TrayState(Mutex<Option<tauri::tray::TrayIcon>>);
 struct AppState {
     settings: Mutex<settings::Settings>,
     poll_secs: Arc<AtomicU32>,
+    /// 任务栏挂件的前端实测逻辑尺寸（set_window_size 记录）。
+    /// 定位时优先用它：刚改完尺寸时 `outer_size()` 可能还是旧值，
+    /// 按旧宽度算出的 x 会让挂件压进图标区。
+    mini_size: Arc<Mutex<(f64, f64)>>,
 }
 
 /// 托盘菜单文案：[显示/隐藏, 设置, 立即刷新, 退出]
@@ -93,13 +109,15 @@ fn main() {
     }
     #[cfg(windows)]
     if std::env::args().any(|a| a == "--probe-taskbar") {
+        probe_dpi_aware();
         taskbar_probe();
         return;
     }
-    /// --probe-vd [hwnd]：打印窗口句柄及其是否在当前虚拟桌面（缺省取前台窗口），
-    /// 用于验证虚拟桌面切换检测（与 ensure_on_current_desktop 同一 API）
+    // --probe-vd [hwnd]：打印窗口句柄及其是否在当前虚拟桌面（缺省取前台窗口），
+    // 用于验证虚拟桌面切换检测（与 ensure_on_current_desktop 同一 API）
     #[cfg(windows)]
     if std::env::args().nth(1).as_deref() == Some("--probe-vd") {
+        probe_dpi_aware();
         let arg = std::env::args().nth(2).and_then(|a| a.parse::<isize>().ok());
         let hwnd = arg.map_or_else(
             || unsafe { GetForegroundWindow() },
@@ -134,6 +152,7 @@ fn main() {
         .manage(AppState {
             settings: Mutex::new(init_settings),
             poll_secs: init_poll.clone(),
+            mini_size: Arc::new(Mutex::new((0.0, 0.0))),
         })
         .setup(move |app| {
             // 悬浮窗默认停靠屏幕右上
@@ -249,20 +268,89 @@ fn refresh_now() -> datasource::Usage {
     datasource::fetch_all()
 }
 
+/// 主窗口尺寸过渡的世代号：连续切换时旧的补间线程看到世代变化立即退出
+static RESIZE_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// 主窗口尺寸过渡动画：约 220ms / easeOutCubic（与 card.css 的
+/// cubic-bezier(.33,1,.68,1) 对齐，窗口与内容同步变形）。
+///
+/// 位置策略（修"切换简约/完整版把窗口弹回右上角"）：
+///   - 贴屏幕左/右边（阈值 72 逻辑 px）→ 固定该边，展开/收起时向屏幕内侧生长；
+///   - 其余情况 → 固定左上角，保持用户拖到的位置；
+///   - 最后夹取进当前显示器工作区，避免尺寸变化后越界。
+fn animate_main_resize(app: &AppHandle, win: tauri::WebviewWindow, w: f64, h: f64) {
+    let my_gen = RESIZE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let app = app.clone();
+    thread::spawn(move || {
+        let scale = win.scale_factor().unwrap_or(1.0);
+        let cur = win.inner_size().unwrap_or_default();
+        let pos = win.outer_position().unwrap_or_default();
+        let (sw, sh) = (cur.width as f64, cur.height as f64);
+        let (px, py) = (pos.x as f64, pos.y as f64);
+        let (tw, th) = (w * scale, h * scale);
+        // 尺寸不可测 / 变化可忽略：直接落定，不做补间
+        if sw < 1.0 || sh < 1.0 || ((sw - tw).abs() < 1.5 && (sh - th).abs() < 1.5) {
+            let _ = app.run_on_main_thread(move || {
+                let _ = win.set_size(LogicalSize::new(w, h));
+            });
+            return;
+        }
+
+        // 目标位置：固定锚点 + 工作区夹取
+        let (mut tx, mut ty) = (px, py);
+        if let Ok(Some(mon)) = win.current_monitor() {
+            let mp = mon.position();
+            let ms = mon.size();
+            let (ml, mt) = (mp.x as f64, mp.y as f64);
+            let (mr, mb) = (ml + ms.width as f64, mt + ms.height as f64);
+            let snap = 72.0 * scale;
+            if (mr - (px + sw)).abs() <= snap {
+                tx = mr - tw; // 贴右停靠：右边缘不动
+            } else if (px - ml).abs() <= snap {
+                tx = ml; // 贴左停靠：左边缘不动
+            }
+            tx = tx.clamp(ml, (mr - tw).max(ml));
+            ty = ty.clamp(mt, (mb - th).max(mt));
+        }
+
+        const STEPS: u32 = 16;
+        for i in 1..=STEPS {
+            // 有新的切换请求：本次补间作废（避免两个线程互相拉扯）
+            if RESIZE_GEN.load(Ordering::SeqCst) != my_gen {
+                return;
+            }
+            let p = i as f64 / STEPS as f64;
+            let e = 1.0 - (1.0 - p).powi(3); // easeOutCubic
+            let cw = (sw + (tw - sw) * e).round().max(1.0) as u32;
+            let ch = (sh + (th - sh) * e).round().max(1.0) as u32;
+            let cx = (px + (tx - px) * e).round() as i32;
+            let cy = (py + (ty - py) * e).round() as i32;
+            let w2 = win.clone();
+            let _ = app.run_on_main_thread(move || {
+                let _ = w2.set_size(PhysicalSize::new(cw, ch));
+                let _ = w2.set_position(tauri::PhysicalPosition::new(cx, cy));
+            });
+            if i < STEPS {
+                thread::sleep(Duration::from_millis(14));
+            }
+        }
+    });
+}
+
 /// 前端（主窗口/任务栏挂件）尺寸变化时同步；挂件随后按设置重新锚定任务栏
 #[tauri::command]
 fn set_window_size(window: tauri::WebviewWindow, w: f64, h: f64, app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    window.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
     if window.label() == "mini" {
+        // 先记录前端实测尺寸（定位用它，避免 outer_size 滞后）
+        if let Ok(mut g) = state.mini_size.lock() {
+            *g = (w, h);
+        }
+        window.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
+        #[cfg(windows)]
         position_mini(&app, &state);
     } else {
-        // 主窗口保持右上停靠
-        if let Ok(Some(mon)) = window.current_monitor() {
-            let ms = mon.size();
-            let ws = window.outer_size().unwrap_or_default();
-            let x = ms.width as i32 - ws.width as i32 - 24;
-            let _ = window.set_position(tauri::PhysicalPosition::new(x.max(8), 24));
-        }
+        // 主窗口：平滑过渡到新尺寸，并保持当前位置（不再强制拉回右上角）
+        animate_main_resize(&app, window, w, h);
     }
     Ok(())
 }
@@ -358,7 +446,9 @@ unsafe extern "system" fn enum_tray_child(hwnd: HWND, lparam: LPARAM) -> BOOL {
 /// 失败时返回空 vec，上层退回窗口结构结果。
 #[cfg(windows)]
 fn uia_band_occupancy(tray: HWND, band: RECT) -> Vec<RECT> {
-    let mut out = Vec::new();
+    let mut out: Vec<RECT> = Vec::new();
+    // 带类名的中间结果：用于事后剔除"不可见宿主窗口"（见下方 retains）
+    let mut tmp: Vec<(String, RECT)> = Vec::new();
     unsafe {
         let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
         let inited = hr == S_OK || hr == S_FALSE; // CHANGED_MODE 时不能配对 CoUninitialize
@@ -389,7 +479,11 @@ fn uia_band_occupancy(tray: HWND, band: RECT) -> Vec<RECT> {
                                 if (r.right - r.left) * 10 >= bw * 9 {
                                     continue;
                                 }
-                                out.push(r);
+                                let cls = el
+                                    .CurrentClassName()
+                                    .map(|b| b.to_string())
+                                    .unwrap_or_default();
+                                tmp.push((cls, r));
                             }
                         }
                     }
@@ -400,18 +494,43 @@ fn uia_band_occupancy(tray: HWND, band: RECT) -> Vec<RECT> {
             }
         }
     }
+    // 只要 UIA 已经拿到真正的任务栏内容（图标按钮/托盘按钮），就可以把"不可见宿主窗口"
+    // 从占位里去掉——`Windows.UI.Input.InputSite.WindowClass` 这类输入宿主横跨大半个
+    // 任务栏却不显示任何东西，留着会把空白区误判成占用，害得挂件无处可落。
+    // 反过来，若没拿到任何按钮（UIA 部分失效），就保守地全部保留。
+    let has_content = tmp.iter().any(|(c, _)| {
+        c.contains("TaskListButton") || c.contains("ToggleButton") || c.contains("SystemTray")
+    });
+    tmp.retain(|(c, _)| {
+        !(has_content && SYS_CHILD_CLASSES.iter().any(|s| c.eq_ignore_ascii_case(s)))
+    });
+    out.extend(tmp.into_iter().map(|(_, r)| r));
     out
 }
 
-/// Shell_TrayWnd 矩形 + 需要避让的占位区间
+/// 任务栏带的测量结果
 #[cfg(windows)]
-fn taskbar_band() -> Option<(RECT, Vec<RECT>)> {
+struct BandInfo {
+    /// Shell_TrayWnd 矩形（物理像素）
+    band: RECT,
+    /// 需要避让的占位矩形（物理像素，未加间隙；各数据源取并集）
+    occ: Vec<RECT>,
+    /// 物理/逻辑缩放（96 DPI = 1.0）
+    scale: f64,
+    /// UIA 拿到的带内元素数；为 0 说明 UIA 探测失败（COM 忙/超时），
+    /// 此时占位是不完整的，选位要额外保守
+    uia_count: usize,
+}
+
+/// Shell_TrayWnd 矩形 + 需要避让的占位区间（系统子窗口 / 第三方挂件 / UIA 元素取并集）
+#[cfg(windows)]
+fn taskbar_band() -> Option<BandInfo> {
     unsafe {
         let tray = FindWindowW(w!("Shell_TrayWnd"), None).ok()?;
         let mut tr = RECT::default();
         GetWindowRect(tray, &mut tr).ok()?;
         // DPI 缩放（96=100%）：兜底预留宽度按逻辑像素换算
-        let dpi = (GetDpiForWindow(tray) as f64 / 96.0).max(1.0);
+        let scale = (GetDpiForWindow(tray) as f64 / 96.0).max(1.0);
         let mut occ = Vec::new();
         for cls in ["TrayNotifyWnd", "Start"] {
             let cls_w = windows::core::HSTRING::from(cls);
@@ -425,8 +544,8 @@ fn taskbar_band() -> Option<(RECT, Vec<RECT>)> {
         // 左右结构保护区：新版 Win11 任务栏是纯 XAML，TrayNotifyWnd/Start 的 rect
         // 是过期值（可能过窄）或不存在，UIA 也可能临时拿不到 —— 无论探测结果如何
         // 都按 DPI 缩放预留托盘/开始按钮的逻辑宽度兜底（与实际 rect 并集取更靠左者）
-        occ.push(RECT { left: tr.right - (280.0 * dpi).round() as i32, top: tr.top, right: tr.right, bottom: tr.bottom });
-        occ.push(RECT { left: tr.left, top: tr.top, right: tr.left + (56.0 * dpi).round() as i32, bottom: tr.bottom });
+        occ.push(RECT { left: tr.right - (280.0 * scale).round() as i32, top: tr.top, right: tr.right, bottom: tr.bottom });
+        occ.push(RECT { left: tr.left, top: tr.top, right: tr.left + (56.0 * scale).round() as i32, bottom: tr.bottom });
         // 子窗口（TrafficMonitor 等第三方挂件）+ 带内第三方顶层窗
         let mut ctx = EnumCtx { tray, band: tr, pid: std::process::id(), occ };
         let _ = EnumWindows(Some(enum_taskbar_widget), LPARAM(&mut ctx as *mut EnumCtx as isize));
@@ -436,67 +555,123 @@ fn taskbar_band() -> Option<(RECT, Vec<RECT>)> {
             LPARAM(&mut ctx as *mut EnumCtx as isize),
         );
         // UIA 补充真实 XAML 内容（Win11 居中图标群等）——比窗口结构精确
-        ctx.occ.extend(uia_band_occupancy(tray, tr));
-        Some((tr, ctx.occ))
+        let uia = uia_band_occupancy(tray, tr);
+        let uia_count = uia.len();
+        ctx.occ.extend(uia);
+        Some(BandInfo { band: tr, occ: ctx.occ, scale, uia_count })
     }
 }
 
-/// 任务栏挂件定位：顶层置顶窗浮在任务栏带上（v1 简化版，视觉等同嵌入），
-/// 在空闲区间里选离锚点最近的位置，避开托盘区/开始按钮
+/// 挂件与任何占位矩形之间必须保留的间隙（逻辑像素）。
+/// 原来是 4——而窗口四周还有 4px 透明留白，视觉间隙直接为 0，看起来就是
+/// "贴着/压着"系统图标；放大到 14 后即使占位数据有轻微滞后也不会视觉重叠。
 #[cfg(windows)]
-fn position_mini(app: &AppHandle, state: &State<AppState>) {
-    let s = state.settings.lock().unwrap().clone();
-    let Some(win) = app.get_webview_window("mini") else { return };
-    if !s.mini_enabled {
-        let _ = win.hide();
-        return;
-    }
-    let Some((band, occ)) = taskbar_band() else { return };
+const PAD_LOGICAL: f64 = 14.0;
+/// 中央图标群右侧预留的生长余量（逻辑像素）：新开/关闭应用会在图标群右侧增删图标，
+/// 而重定位最快也要 2s，不预留就会被刚冒出来的图标压住
+#[cfg(windows)]
+const ICON_GROW_LOGICAL: f64 = 44.0;
+/// 托盘左侧预留的生长余量（逻辑像素）：新通知图标会插到托盘左侧、把托盘整体推左
+#[cfg(windows)]
+const TRAY_GROW_LOGICAL: f64 = 32.0;
+/// UIA 探测失败（带内元素数为 0）时追加的保守余量（逻辑像素）
+#[cfg(windows)]
+const UIA_FAIL_PAD_LOGICAL: f64 = 24.0;
 
-    // 注意：不能用 outer_size()==0 作为放弃条件——窗口从未 show 过时 tao 侧
-    // 尺寸可能尚未回填（前端 set_window_size 未到达），直接 abort 会造成
-    // "永不显示 -> 尺寸永缺" 的死锁。尺寸不可用时先按占位估算，仍照常 show，
-    // 前端挂载后 syncSize 会把真实尺寸同步回来，下一轮自然校正。
-    let sz = win.outer_size().unwrap_or_default();
-    let (mut mw, mut mh) = (sz.width as i32, sz.height as i32);
-    let unmeasured = mw <= 0 || mh <= 0;
-    if unmeasured {
-        // 保守估计（逻辑 px * 主屏缩放），只影响首次落位，之后会被真实尺寸替代
-        let scale = app.primary_monitor().ok().flatten()
-            .map(|m| m.scale_factor())
-            .unwrap_or(1.0);
-        mw = (160.0 * scale).round() as i32;
-        mh = (48.0 * scale).round() as i32;
+/// 占位矩形 -> 互不相交的 x 区间（缝隙 ≤2px 视为同一块，
+/// 避免图标之间 1~2px 的缝被误判成可落位的空隙）
+#[cfg(windows)]
+fn merge_x_intervals(rects: &[RECT]) -> Vec<(i32, i32)> {
+    let mut v: Vec<(i32, i32)> = rects
+        .iter()
+        .filter(|r| r.right > r.left)
+        .map(|r| (r.left, r.right))
+        .collect();
+    v.sort();
+    let mut out: Vec<(i32, i32)> = Vec::new();
+    for (a, b) in v.drain(..) {
+        match out.last_mut() {
+            Some(last) if a <= last.1 + 2 => last.1 = last.1.max(b),
+            _ => out.push((a, b)),
+        }
+    }
+    out
+}
+
+/// 选位计算（纯函数：position_mini 与 --probe-taskbar 共用，便于校验）
+/// 返回 (x, y, 收缩后的空闲区间, pad)
+#[cfg(windows)]
+fn plan_mini(info: &BandInfo, mw: i32, mh: i32, pos: &str) -> (i32, i32, Vec<(i32, i32)>, i32) {
+    let band = info.band;
+    let scale = info.scale;
+    let mut pad = (PAD_LOGICAL * scale).round() as i32;
+    if info.uia_count == 0 {
+        // UIA 拿不到（COM 忙/超时）：占位只剩窗口结构，而 Win11 上窗口 rect 可能是
+        // 过期值（图标群/托盘真实范围更大）——再追加一层保守余量
+        pad += (UIA_FAIL_PAD_LOGICAL * scale).round() as i32;
+    }
+    let grow = (ICON_GROW_LOGICAL * scale).round() as i32;
+    let tgrow = (TRAY_GROW_LOGICAL * scale).round() as i32;
+
+    // 占位区间：跨任务栏中心的那块 = 中央图标群（右侧留生长余量）；
+    // 贴住任务栏右端的那块 = 托盘/系统区（左侧留生长余量）
+    let mut blocks = merge_x_intervals(&info.occ);
+    let center = (band.left + band.right) / 2;
+    for (a, b) in blocks.iter_mut() {
+        if *a <= center && center <= *b {
+            *b = (*b + grow).min(band.right);
+        }
+        if *b >= band.right - 2 {
+            *a = (*a - tgrow).max(band.left);
+        }
+    }
+    blocks.sort();
+    let mut merged: Vec<(i32, i32)> = Vec::new();
+    for (a, b) in blocks {
+        match merged.last_mut() {
+            Some(last) if a <= last.1 + 2 => last.1 = last.1.max(b),
+            _ => merged.push((a, b)),
+        }
     }
 
-    let m = 4i32;
-    let mut ints: Vec<(i32, i32)> = occ.iter().map(|r| (r.left - m, r.right + m)).collect();
-    ints.sort();
+    // 再按 pad 收缩出真正可用的空隙
     let mut gaps: Vec<(i32, i32)> = Vec::new();
-    let mut cur = band.left + m;
-    for (a, b) in ints {
-        if a - cur > 0 { gaps.push((cur, a)); }
+    let mut cur = band.left + pad;
+    for (a, b) in merged.iter().copied() {
+        let (a, b) = (a - pad, b + pad);
+        if a - cur > 0 {
+            gaps.push((cur, a));
+        }
         cur = cur.max(b);
     }
-    if band.right - m - cur > 0 { gaps.push((cur, band.right - m)); }
-    if gaps.is_empty() { gaps.push((band.left + m, band.right - m)); }
+    if band.right - pad - cur > 0 {
+        gaps.push((cur, band.right - pad));
+    }
+    if gaps.is_empty() {
+        gaps.push((band.left + pad, band.right - pad));
+    }
 
-    let a_right = gaps.last().unwrap().1 - mw;
-    let a_left = band.left + m;
+    let a_left = gaps.first().map(|g| g.0).unwrap_or(band.left + pad);
+    let a_right = gaps.last().map(|g| g.1 - mw).unwrap_or(band.right - pad - mw);
     let a_center = (band.left + band.right) / 2 - mw / 2;
-    let ax = match s.mini_pos.as_str() { "left" => a_left, "center" => a_center, _ => a_right };
+    let ax = match pos {
+        "left" => a_left,
+        "center" => a_center,
+        _ => a_right,
+    };
 
     let mut best: Option<i32> = None;
     let mut bs = i32::MAX;
-    for (gl, gr) in &gaps {
-        if gr - gl >= mw {
-            for x in [*gl, gr - mw, gl + (gr - gl - mw) / 2] {
-                let sc = (x - ax).abs();
-                // 同分取更靠右的：居中锚点两侧等距时优先贴图标群右侧，视觉上更"居中"
-                if sc < bs || (sc == bs && best.map_or(false, |b| x > b)) {
-                    bs = sc;
-                    best = Some(x);
-                }
+    for (gl, gr) in gaps.iter().copied() {
+        if gr - gl < mw {
+            continue;
+        }
+        for x in [gl, gr - mw, gl + (gr - gl - mw) / 2] {
+            let sc = (x - ax).abs();
+            // 同分取更靠右的：居中锚点两侧等距时优先贴图标群右侧，视觉上更"居中"
+            if sc < bs || (sc == bs && best.map_or(false, |b| x > b)) {
+                bs = sc;
+                best = Some(x);
             }
         }
     }
@@ -508,11 +683,68 @@ fn position_mini(app: &AppHandle, state: &State<AppState>) {
                 .iter()
                 .copied()
                 .max_by_key(|(gl, gr)| gr - gl)
-                .unwrap_or((band.left + m, band.right - m));
+                .unwrap_or((band.left + pad, band.right - pad));
             gl + ((gr - gl - mw) / 2).max(0)
         }
     };
     let y = band.top + ((band.bottom - band.top) - mh) / 2;
+    (x, y, gaps, pad)
+}
+
+/// 交叉校验：挂件框不得与任何**原始**占位矩形相交
+/// （生长余量只是额外保守量，不参与校验，否则会被自己加的余量误判）
+#[cfg(windows)]
+fn rect_free(x: i32, mw: i32, occ: &[RECT]) -> bool {
+    occ.iter().all(|r| x + mw <= r.left || x >= r.right)
+}
+
+/// 任务栏挂件定位：顶层置顶窗浮在任务栏带上（v1 简化版，视觉等同嵌入），
+/// 在空闲区间里选离锚点最近的位置，避开图标群/托盘/开始按钮/第三方挂件。
+/// 落位前对占位做一次交叉校验，校验不过再退到最大空隙中间。
+#[cfg(windows)]
+fn position_mini(app: &AppHandle, state: &State<AppState>) {
+    let s = state.settings.lock().unwrap().clone();
+    let Some(win) = app.get_webview_window("mini") else { return };
+    if !s.mini_enabled {
+        let _ = win.hide();
+        return;
+    }
+    let Some(info) = taskbar_band() else { return };
+
+    // 注意：不能用 outer_size()==0 作为放弃条件——窗口从未 show 过时 tao 侧
+    // 尺寸可能尚未回填（前端 set_window_size 未到达），直接 abort 会造成
+    // "永不显示 -> 尺寸永缺" 的死锁。尺寸优先级：前端实测（最新）> outer_size
+    // （刚改尺寸时可能还是旧值）> 经验估算；三者取大者，宁可多留空间。
+    let scale = info.scale;
+    let rec = state.mini_size.lock().map(|g| *g).unwrap_or((0.0, 0.0));
+    let sz = win.outer_size().unwrap_or_default();
+    let (mut mw, mut mh) = if rec.0 > 1.0 && rec.1 > 1.0 {
+        ((rec.0 * scale).round() as i32, (rec.1 * scale).round() as i32)
+    } else {
+        (sz.width as i32, sz.height as i32)
+    };
+    if mw <= 0 || mh <= 0 {
+        // 保守估计（逻辑 px * 缩放），只影响首次落位，之后会被真实尺寸替代
+        mw = (160.0 * scale).round() as i32;
+        mh = (48.0 * scale).round() as i32;
+    }
+    mw = mw.max(sz.width as i32);
+    mh = mh.max(sz.height as i32);
+
+    let (mut x, y, gaps, pad) = plan_mini(&info, mw, mh, s.mini_pos.as_str());
+    if !rect_free(x, mw, &info.occ) {
+        // 兜底：从最大空隙中间取一个不压占位的位置
+        let (gl, gr) = gaps
+            .iter()
+            .copied()
+            .max_by_key(|(gl, gr)| gr - gl)
+            .unwrap_or((info.band.left + pad, info.band.right - pad));
+        let cand = gl + ((gr - gl - mw) / 2).max(0);
+        if rect_free(cand, mw, &info.occ) {
+            x = cand;
+        }
+        // 两次校验都不过：仍按计划位置落位——宁可位置略有偏差，也不能让挂件消失
+    }
 
     if let Ok(hwnd) = win.hwnd() {
         unsafe {
@@ -749,29 +981,36 @@ fn taskbar_probe() {
         println!("-- UIA (+{}):", ctx.occ.len() - base);
         dump_uia_names(tray, tr);
 
-        // 生产路径（taskbar_band，含左右 DPI 保护带）的空闲区间与锚点
-        let Some((_, occ_prod)) = taskbar_band() else { return };
-        let m = 4i32;
-        let mut ints: Vec<(i32, i32)> = occ_prod.iter().map(|r| (r.left - m, r.right + m)).collect();
-        ints.sort();
-        let mut gaps: Vec<(i32, i32)> = Vec::new();
-        let mut cur = tr.left + m;
-        for (a, b) in ints {
-            if a - cur > 0 {
-                gaps.push((cur, a));
+        // 生产路径（taskbar_band + plan_mini）的落位与净空
+        let Some(info) = taskbar_band() else { return };
+        println!(
+            "\n== plan (scale={}, uia_count={}, occ={}) ==",
+            info.scale,
+            info.uia_count,
+            info.occ.len()
+        );
+        for pos in ["right", "center", "left"] {
+            // card 皮肤挂件实测约 126x44 逻辑 px（含窗口 8px 透明留白）
+            let mw = (126.0 * info.scale).round() as i32;
+            let mh = (44.0 * info.scale).round() as i32;
+            let (x, y, gaps, pad) = plan_mini(&info, mw, mh, pos);
+            let mut clearance = i32::MAX;
+            for r in &info.occ {
+                let d = if r.right <= x {
+                    x - r.right
+                } else if r.left >= x + mw {
+                    r.left - (x + mw)
+                } else {
+                    0
+                };
+                clearance = clearance.min(d);
             }
-            cur = cur.max(b);
-        }
-        if tr.right - m - cur > 0 {
-            gaps.push((cur, tr.right - m));
-        }
-        println!("gaps (m={m}):");
-        for (a, b) in &gaps {
-            println!("   {a}..{b} (w={})", b - a);
-        }
-        if let Some((gl, gr)) = gaps.last() {
-            println!("right-anchor x for w=200: {}", gr - 200);
-            println!("left-anchor x: {gl}");
+            println!(
+                "pos={pos:<6} pad={pad} -> x={x} span={x}..{} y={y} free={} clearance={clearance}",
+                x + mw,
+                rect_free(x, mw, &info.occ)
+            );
+            println!("   gaps: {gaps:?}");
         }
     }
 }
@@ -797,13 +1036,22 @@ fn dump_uia_names(tray: HWND, band: RECT) {
                                     .CurrentName()
                                     .map(|b| b.to_string())
                                     .unwrap_or_default();
+                                // 类名/AutomationId 用于识别匿名元素（排查占位来源）
+                                let cls = el
+                                    .CurrentClassName()
+                                    .map(|b| b.to_string())
+                                    .unwrap_or_default();
+                                let aid = el
+                                    .CurrentAutomationId()
+                                    .map(|b| b.to_string())
+                                    .unwrap_or_default();
                                 let Ok(r) = el.CurrentBoundingRectangle() else { continue };
                                 let full = (r.right - r.left) * 10 >= bw * 9;
                                 println!(
-                                    "   [{}] ({},{})-({},{}) \"{}\"",
+                                    "   [{}] ({},{})-({},{}) cls=[{}] aid=[{}] \"{}\"",
                                     if full { "container" } else { "elem" },
                                     r.left, r.top, r.right, r.bottom,
-                                    name
+                                    cls, aid, name
                                 );
                             }
                         }

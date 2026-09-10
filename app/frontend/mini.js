@@ -2,6 +2,10 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// 挂件同样屏蔽 WebView2 默认右键菜单（避免在任务栏上弹出无意义的菜单）
+document.addEventListener('contextmenu', (e) => { e.preventDefault(); }, true);
+window.addEventListener('contextmenu', (e) => e.preventDefault());
+
 let usage = null;
 let settings = null;
 let cur = null;

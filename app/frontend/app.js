@@ -4,6 +4,11 @@ const { listen } = window.__TAURI__.event;
 
 const $ = (s) => document.querySelector(s);
 
+// 悬浮窗是常驻小挂件，不需要 WebView2 的默认右键菜单（刷新/另存为/检查…）。
+// 捕获阶段拦一层，避免皮肤内部代码在冒泡阶段吃掉事件后菜单照样弹出。
+document.addEventListener('contextmenu', (e) => { e.preventDefault(); }, true);
+window.addEventListener('contextmenu', (e) => e.preventDefault());
+
 let usage = null;
 let compact = false;
 let appSettings = {

@@ -15,9 +15,9 @@
 
 ## 特性
 
-- **双形态展示** —— 置顶无边框悬浮窗（可拖拽、完整/紧凑两档），以及常驻系统任务栏的迷你挂件
+- **双形态展示** —— 置顶无边框悬浮窗（可拖拽、完整/紧凑两档，切换时保持当前位置并带过渡动画），以及常驻系统任务栏的迷你挂件
 - **10 套皮肤即点即换** —— 设置面板内用真实样式实时预览（无需逐个切换试穿），点击卡片立即生效
-- **任务栏智能避让** —— Win10 / Win11 通吃：自动避开托盘区、开始按钮与已固定图标群（通过 UI Automation 读取任务栏真实渲染位置，旧版窗口结构在新版 Win11 上拿不到准确坐标）；与 TrafficMonitor 等第三方任务栏挂件共存；图标群随应用启停伸缩时每 2 秒自动跟随；位置冲突时自动滑向最近空闲区
+- **任务栏智能避让** —— Win10 / Win11 通吃：自动避开托盘区、开始按钮与已固定图标群（通过 UI Automation 读取任务栏真实渲染位置，旧版窗口结构在新版 Win11 上拿不到准确坐标）；与 TrafficMonitor 等第三方任务栏挂件共存；图标群随应用启停伸缩时每 2 秒自动跟随；与图标群/托盘保持安全净空并为图标群右侧、托盘左侧预留"生长余量"（新开应用/新通知图标不会压住挂件）；位置冲突时自动滑向最近空闲区，落位前还会对占位做一次交叉校验
 - **外观自定义** —— 字号缩放 80–150%、窗口透明度、主题色（跟随额度三档 / 固定绿·琥珀·青）、显示内容四开关（本周 / credits / 倒计时 / 邮箱），改动即时生效
 - **托盘集成** —— 托盘图标按剩余额度三档变色（绿 >50% / 黄 >20% / 红 ≤20%），菜单直达显示/设置/刷新/退出
 - **开机自启** —— 用户级注册表（HKCU），无需管理员权限
@@ -54,9 +54,11 @@ cd GPT-HP-BAR/app
 cargo build --release
 ./target/release/gpt-hp-bar.exe          # 悬浮窗 + 托盘
 ./target/release/gpt-hp-bar.exe --probe          # 数据源诊断
-./target/release/gpt-hp-bar.exe --probe-taskbar # 任务栏占位/空闲区间诊断（挂件避让）
+./target/release/gpt-hp-bar.exe --probe-taskbar # 任务栏占位/空闲区间 + 挂件预测落位/净空诊断
 ./target/release/gpt-hp-bar.exe --probe-vd      # 虚拟桌面归属检测诊断
 ```
+
+> `--probe-*` 会先声明进程 DPI 感知，因此输出的坐标就是实机物理坐标，可直接和截图对齐核对。
 
 工具链：Rust stable。官方 MSVC 路线装 [VS Build Tools](https://visualstudio.microsoft.com/zh-hans/downloads/) 即可；
 没有管理员权限时可用便携版 [MinGW-w64](https://winlibs.com/)——把 `app/.cargo/config.example.toml` 复制为同目录 `config.toml` 并填入你的 gcc 路径。
