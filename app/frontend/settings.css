@@ -49,16 +49,32 @@ footer{display:flex;align-items:center;gap:12px;justify-content:flex-end}
   background:#0e1219;padding:8px;cursor:pointer;user-select:none;
   transition:border-color .15s,background .15s}
 .sk-card-pv:hover{border-color:rgba(255,255,255,.28)}
-.sk-card-pv.sel{border-color:#10b981;background:rgba(16,185,129,.08)}
+/* v2：每套皮肤的身份色（设计稿 theme-v2.css §3）—— 预览的挂件底色与选中态都跟着走，
+   一眼就能认出格子属于哪套皮肤，不再统一青色"任务栏底色" */
+.sk-card-pv[data-skin="hero"]{--id:#6366f1}
+.sk-card-pv[data-skin="glass"]{--id:#22d3ee}
+.sk-card-pv[data-skin="term"]{--id:#4ade80}
+.sk-card-pv[data-skin="card"]{--id:#3b82f6}
+.sk-card-pv[data-skin="tile"]{--id:#0ea5e9}
+.sk-card-pv[data-skin="battery"]{--id:#22d3ee}
+.sk-card-pv[data-skin="gauge"]{--id:#0ea5e9}
+.sk-card-pv[data-skin="neon"]{--id:#22d3ee}
+.sk-card-pv[data-skin="liquid"]{--id:#14b8a6}
+.sk-card-pv[data-skin="pixel"]{--id:#10b981}
+.sk-card-pv.sel{border-color:var(--id,#10b981);
+  background:color-mix(in srgb,var(--id,#10b981) 9%,transparent)}
 .sk-card-pv.sel::after{content:"✓";position:absolute;top:14px;right:14px;width:18px;height:18px;
-  border-radius:50%;background:#10b981;color:#04140b;font-size:11px;font-weight:700;line-height:18px;
+  border-radius:50%;background:var(--id,#10b981);color:#04140b;font-size:11px;font-weight:700;line-height:18px;
   text-align:center;z-index:2}
 .pv-stage{position:relative;height:132px;border-radius:8px;overflow:hidden;
   background:radial-gradient(130% 150% at 18% 0%,#1b2434,#0c0f16)}
 .pv-full{position:absolute;transform-origin:0 0}
 .pv-ministage{position:relative;height:46px;margin-top:6px;border-radius:8px;overflow:hidden;
-  background:linear-gradient(180deg,#0a6a7d,#075666)}  /* 模拟任务栏底色 */
+  /* v2：身份色染出的"任务栏底色"（原来是统一青色，看不出皮肤差异） */
+  background:linear-gradient(180deg,
+    color-mix(in srgb,var(--id,#0ea5e9) 38%,#04121f),
+    color-mix(in srgb,var(--id,#0ea5e9) 20%,#030a12))}
 .pv-mini{position:absolute;transform-origin:0 0}
 .pv-ministage .pv-mini > *{box-shadow:none!important}  /* 裁剪阴影在预览里同样难看 */
 .pv-name{margin-top:7px;text-align:center;font-size:12px;color:#c9d0dd}
-.sk-card-pv.sel .pv-name{color:#a7f3d0}
+.sk-card-pv.sel .pv-name{color:color-mix(in srgb,var(--id,#10b981) 58%,#e8ecf4)}

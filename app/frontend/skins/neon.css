@@ -58,3 +58,37 @@
 .sk-neon-mini .m-num{font-family:var(--f-num,"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif);
   font-size:13.5px;font-weight:700;color:var(--tone-a);
   text-shadow:0 0 8px color-mix(in srgb,var(--tone-a) 80%,transparent)}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §1 · §2 · §3 · §5）—— 身份色「赛博 Cyber」
+   ============================================================================ */
+/* §3 身份色：描边降饱和（原 45% 太抢），辉光留给数字和扫光条 */
+.sk-neon{
+  --key:#22d3ee;
+  background:linear-gradient(165deg,#05080f,#080c16);
+  border-color:color-mix(in srgb,var(--tone-a) 34%,transparent);
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+.sk-neon .n-info{color:#6b8494}
+.sk-neon .n-sub{color:#4a93a3}
+/* §2 落位：原来在 n-top 里 flex-end，和 30px 大数字共用基线 -> 视觉错位。
+   改为绝对定位贴卡片右上内边距（卡片内边距 14px 17px 12px -> top 11 / right 14）。
+   注 1：按钮组移出文档流后，原先把数字顶到右端的 margin-left:auto 也随之失效，
+         所以把 auto 交给 .n-num，保证大数字仍然贴右端。
+   注 2：30px 大数字和右上角按钮同一个角落，必须给 n-top 让出按钮宽度，否则按钮会压住 "%"。
+         霓虹没有紧凑形态（sizes.compact = null），按钮组只有 1 个齿轮（20px），
+         所以这里按"按钮左边缘 34px + 8px 间隙 - 内容边距 17px" => padding-right 26px；
+         设计稿写的 56px 是按 2 个按钮（46px）算的，在实机上会多出 ~30px 空档。 */
+.sk-neon .hp-chrome{position:absolute;right:14px;top:11px;z-index:5}
+.sk-neon .n-num{margin-left:auto}
+.sk-neon .n-top{padding-right:26px}
+/* §1 变体② pill：按钮跟着 999px 圆角 + tone 色走，属于赛博那套语言 */
+.sk-neon .hp-chrome .tgl{border-radius:999px;
+  border-color:color-mix(in srgb,var(--tone-a) 30%,transparent);
+  background:color-mix(in srgb,var(--tone-a) 8%,transparent);
+  color:color-mix(in srgb,var(--tone-a) 50%,#94a3b8);opacity:.6}
+.sk-neon .hp-chrome .tgl:hover{color:#e9fdff;border-color:var(--tone-a);
+  background:color-mix(in srgb,var(--tone-a) 16%,transparent);
+  box-shadow:0 0 10px -2px var(--tone-a)}
+/* §5.2 扫光血槽过渡曲线统一 */
+.sk-neon .n-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}

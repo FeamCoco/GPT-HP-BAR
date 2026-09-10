@@ -27,3 +27,30 @@
 .sk-tile-mini .m-tile i{position:absolute;left:2.5px;bottom:2.5px;height:3.5px;border-radius:2px}
 .sk-tile-mini .m-tile i.m-track{right:2.5px;background:rgba(255,255,255,.28)}
 .sk-tile-mini .m-tile i.m-fill{width:0%;background:#fff;transition:width .35s ease}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §1 · §2 · §3 · §4 · §5）
+   身份色「Fluent 强调」
+   ============================================================================ */
+/* §3 身份色：文字原本直接压壁纸（#9aa3b5 无描边），亮壁纸上基本看不见 -> 加投影 */
+.sk-tile{
+  --key:#0ea5e9;--ink-1:#f1f5f9;--ink-2:#c3ccda;--ink-3:#93a0b4;
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+.sk-tile .hp-mail{color:var(--ink-2);text-shadow:0 1px 3px rgba(0,0,0,.7)}
+.sk-tile .tile{border-radius:15px;
+  box-shadow:0 12px 32px rgba(2,6,14,.55),inset 0 1px 0 rgba(255,255,255,.25)}
+.sk-tile .tile .lab{letter-spacing:1.8px;opacity:.8}
+/* §2 落位：按钮行保持独立（方向本来就对），只把行高给足，视觉重心回到磁贴本身 */
+.sk-tile .chrome-row{min-height:20px;margin-bottom:5px}
+/* §1 变体③ ghost：这套皮肤本身没有卡片底、直接浮在桌面上，任何实心按钮片都会
+   "贴不住"，所以彻底去底，只留图标 + 描边投影保证在亮壁纸上也可读 */
+.sk-tile .hp-chrome .tgl{background:transparent;border-color:transparent;color:var(--ink-2);
+  opacity:.5;filter:drop-shadow(0 1px 3px rgba(0,0,0,.65))}
+.sk-tile .hp-chrome:hover .tgl{opacity:1}
+.sk-tile .hp-chrome .tgl:hover{color:#fff;background:rgba(255,255,255,.16);
+  border-color:rgba(255,255,255,.24)}
+/* §5.2 进度线曲线统一 */
+.sk-tile .tile .track i,.sk-tile-mini .m-tile i.m-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §4 挂件形态同步换色 */
+.sk-tile-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}

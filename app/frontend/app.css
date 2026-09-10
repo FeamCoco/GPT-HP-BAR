@@ -9,16 +9,84 @@ html,body{background:transparent;overflow:hidden;height:100%;user-select:none}
 body{font-family:var(--f-ui);font-size:13px;color:#e8ecf4;display:flex;align-items:center;justify-content:center}
 #root{position:relative}
 
-/* 皮肤外壳通用：右上角小按钮组（由外壳注入皮肤的 chrome 槽位） */
+/* ============================================================================
+   外壳按钮 v2（设计稿 design/theme-v2.css §1）——
+   从「10 套皮肤共用一片白灰贴纸」改成「一套规格 + 5 种皮肤化变体」。三条规则：
+     R1 静默：平时 opacity .55，鼠标进入按钮组才提到 1（数据永远是主角）
+     R2 归属：表面材质用该皮肤自己的 --surface/--line/--ink，不再一层白片打天下
+     R3 好点：视觉尺寸维持 20px（不改窗口尺寸），命中区用 ::before 撑到 28px
+   五种变体（chip 卡类基准 / pill 胶囊 / ghost 无底板 / retro 像素 / mono 终端）
+   分别写在对应 skin CSS 里，靠「皮肤类 + 后代」选择器取得更高优先级。
+   ============================================================================ */
 .hp-chrome{display:inline-flex;gap:6px;align-items:center}
-.tgl{flex:none;width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,255,255,.14);
-  background:rgba(255,255,255,.06);color:#9aa3b5;display:inline-flex;align-items:center;justify-content:center;
-  cursor:pointer;padding:0;transition:.15s}
-.tgl:hover{color:#e8ecf4;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.1)}
-.tgl svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.tgl{position:relative;flex:none;width:20px;height:20px;border-radius:8px;
+  border:1px solid var(--line,rgba(255,255,255,.10));
+  background:var(--surface,rgba(255,255,255,.06));
+  color:var(--ink-2,#9aa3b5);
+  display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;padding:0;opacity:.55;                     /* R1 静默 */
+  transition:opacity .18s ease,color .18s ease,background .18s ease,
+    border-color .18s ease,box-shadow .18s ease}
+.tgl::before{content:"";position:absolute;inset:-4px;border-radius:inherit}  /* R3 命中区 28px */
+/* 图标 11 -> 12px，小尺寸下辨识度明显变好 */
+.tgl svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.hp-chrome:hover .tgl{opacity:1}                            /* R1 整组一起亮，避免"只亮一个"的跳动 */
+.tgl:hover{color:var(--ink-1,#e8ecf4);background:var(--surface-hi,rgba(255,255,255,.12));
+  border-color:rgba(255,255,255,.28)}
+.tgl:active{background:rgba(255,255,255,.18)}
+/* 键盘可达性：原来完全没有焦点态 */
+.tgl:focus-visible{outline:2px solid color-mix(in srgb,var(--key,#3b82f6) 65%,transparent);outline-offset:2px}
 /* 折叠时收缩按钮箭头翻转（完整=朝上，紧凑=朝下），与设计稿 showcase 一致 */
 body.compact #tgl svg{transform:rotate(180deg)}
-#root > *{transition:opacity .2s ease}
 
-@keyframes hp-pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.danger-flash{animation:hp-pulse 1.05s ease-in-out infinite}
+/* ---- §0 公共明度骨架：让 10 套皮肤看起来是"一家产品" ----
+   只用色相区分身份，明度保持一致（ink-1 ≈ 92% / ink-2 ≈ 66% / ink-3 ≈ 47%）。
+   各皮肤的身份色在对应 skin CSS 里覆盖这几个 token（后加载，同权重后置生效）。 */
+.sk-hero,.sk-glass,.sk-term,.sk-card,.sk-tile,
+.sk-battery,.sk-gauge,.sk-neon,.sk-liquid,.sk-pixel{
+  --ink-1:#e8ecf4;--ink-2:#9aa3b5;--ink-3:#6b7488;
+  --surface:rgba(255,255,255,.06);--surface-hi:rgba(255,255,255,.12);
+  --line:rgba(255,255,255,.10);--key:#3b82f6}
+
+/* ---- §5.1 状态色可插值：用 @property 把两个 token 注册成 <color>，
+   浏览器才会对它们做过渡（跨档时宽度与颜色同步走，不再"宽度慢慢走、颜色啪一下换"） */
+@property --tone-a{syntax:'<color>';inherits:true;initial-value:#6ee7b7}
+@property --tone-b{syntax:'<color>';inherits:true;initial-value:#10b981}
+
+/* ---- §5.4 换肤入场：mountSkin() 是 root.innerHTML 直替，
+   旧皮肤瞬间消失、新皮肤瞬间出现（没有属性变化可过渡），所以给根元素挂一次性入场动画，
+   新元素每次挂载都会重放。 */
+@keyframes hp-skin-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+#root > *{transition:opacity .2s ease;
+  animation:hp-skin-in .22s cubic-bezier(.22,1,.36,1) both}
+/* 透明度设置：原来 root.style.opacity 直接赋值，补一条过渡避免拖滑块时硬跳 */
+#root{transition:opacity .2s ease}
+
+/* ---- §5.3 告警：从"整块透明度闪烁"改成"发光呼吸" ----
+   原来 4 套皮肤各写一份完全相同的 opacity 1↔.4 脉冲，把大数字透明度来回拉，
+   字忽明忽暗、读不下去，观感更像"坏了"。改成不透明度不动、只让光晕呼吸：
+   数字始终可读，告警靠光表达；周期 1.05s -> 1.6s 减少焦虑感。 */
+@keyframes hp-breathe-glow{
+  0%,100%{text-shadow:0 0 0 rgba(239,68,68,0)}
+  50%{text-shadow:0 0 16px rgba(248,113,113,.9),0 0 4px rgba(239,68,68,.7)}}
+@keyframes hp-breathe-fill{           /* 血槽 / 电池：亮度呼吸 */
+  0%,100%{filter:brightness(1) saturate(1)}
+  50%{filter:brightness(1.45) saturate(1.2)}}
+@keyframes hp-breathe-icon{           /* 图标（闪电）：光晕 + 亮度 */
+  0%,100%{filter:brightness(1) drop-shadow(0 0 0 rgba(239,68,68,0))}
+  50%{filter:brightness(1.3) drop-shadow(0 0 7px rgba(248,113,113,.9))}}
+/* !important 用来压掉各皮肤原来的 sk*-pulse（它们选择器权重更高、加载更晚）；
+   像素皮肤"最后一颗心闪烁"是刻意的 8-bit 语言，不在这次改动范围内。 */
+.danger-flash{animation:hp-breathe-glow 1.6s ease-in-out infinite!important}
+
+/* ---- §5.6 尊重系统"减少动态效果" ----
+   原来该设置开启后水波、扫光、闪烁、呼吸全都照跑。装饰性动画一律停掉，
+   但告警信息不能因为关了动画就丢失 —— 降级成静态高对比红描边。 */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important}
+  .danger-flash{animation:none!important;filter:none!important}
+  .sk-card.danger,.sk-hero.danger,.sk-term.danger,.sk-neon.danger{
+    border-color:rgba(239,68,68,.75)!important}
+}

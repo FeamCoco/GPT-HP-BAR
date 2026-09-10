@@ -59,3 +59,24 @@ body.compact .sk-card .row{margin:5px 0}
 .sk-card-mini .m-track{width:52px;height:10px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden}
 .sk-card-mini .m-fill{display:block;height:100%;width:0%;border-radius:99px;
   background:linear-gradient(90deg,var(--tone-a),var(--tone-b));transition:width .35s ease}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §3 · §4 · §5）—— 身份色「板岩 Slate」
+   ============================================================================ */
+/* §3 身份色：整体提亮一档，和浅色壁纸共存时不再糊成一块 */
+.sk-card{
+  --key:#3b82f6;--ink-1:#e8ecf4;--ink-2:#98a2b3;--ink-3:#6b7488;
+  background:linear-gradient(165deg,rgba(19,25,36,.96),rgba(11,15,22,.96));
+  /* §5.1 状态色可插值：根元素原本就有 width/padding 过渡（与 Rust 尺寸补间对齐），
+     覆盖 transition 时必须把旧属性一起带上，否则会被吃掉 */
+  transition:width .22s cubic-bezier(.33,1,.68,1),
+             padding .22s cubic-bezier(.33,1,.68,1),
+             --tone-a .5s cubic-bezier(.22,1,.36,1),
+             --tone-b .5s cubic-bezier(.22,1,.36,1)}
+/* §5.2 进度曲线统一：.35s ease -> .5s cubic-bezier(.22,1,.36,1)（起步快、收尾缓） */
+.sk-card .bar i,.sk-card-mini .m-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §5.3 告警：数字的"整块透明度闪烁"由 app.css 的 .danger-flash 全局规则
+   （hp-breathe-glow，!important）接管；这里保留原 keyframes 不动，便于回滚 */
+/* §4 挂件形态同步换色 */
+.sk-card-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.20)}

@@ -30,3 +30,20 @@
 .sk-gauge-mini .m-gauge{width:22px;height:13px;overflow:visible;flex:none}
 .sk-gauge-mini .m-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:2.5;stroke-linecap:round}
 .sk-gauge-mini .m-arc{fill:none;stroke:var(--tone-b);stroke-width:2.5;stroke-linecap:round;transition:stroke-dasharray .35s ease}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §3 · §4 · §5）—— 身份色「仪表靛 Instrument」
+   ============================================================================ */
+/* §3 身份色：底色带一点点蓝，和弧线同色系 */
+.sk-gauge{
+  --key:#0ea5e9;--ink-1:#e9eef5;--ink-2:#94a0b0;--ink-3:#6a7486;
+  background:linear-gradient(170deg,#101a2c,#0a101c);
+  border-color:rgba(56,189,248,.16);
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+.sk-gauge .cap{color:var(--ink-2)}
+/* §5.2 曲线统一：弧线 .35s ease -> .5s；指针保留原有轻微过冲，只把时长对齐（.4 -> .55s） */
+.sk-gauge .g-arc,.sk-gauge-mini .m-arc{transition:stroke-dasharray .5s cubic-bezier(.22,1,.36,1)}
+.sk-gauge .g-needle{transition:transform .55s cubic-bezier(.34,1.32,.64,1)}
+/* §4 挂件形态同步换色 */
+.sk-gauge-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}

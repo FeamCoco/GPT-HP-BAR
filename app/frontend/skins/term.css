@@ -29,3 +29,20 @@
 .sk-term-mini .br{color:rgba(255,255,255,.35)}
 .sk-term-mini .m-num{color:var(--tone-b);text-shadow:0 0 8px color-mix(in srgb,var(--tone-b) 60%,transparent)}
 .sk-term-mini.nodata .m-num{color:#57a06c;text-shadow:none}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §1 · §3 · §5）—— 身份色「磷光绿 Phosphor」
+   ============================================================================ */
+/* §3 身份色：底色再压暗一档，绿字更"毒"（原 #0a0f0a 偏灰） */
+.sk-term{
+  --key:#4ade80;--ink-1:#86efac;--ink-2:#4ade80;--ink-3:#2f6b45;
+  background:#071009;
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+.sk-term .dim b{color:#a7f3d0}
+.sk-term .title .sub{color:#3f8a58}
+/* §1 变体⑤ mono：去底 + 绿光，跟等宽绿字一套语言 */
+.sk-term .hp-chrome .tgl{border-radius:5px;border-color:transparent;background:transparent;
+  color:#3f8a58;opacity:.8}
+.sk-term .hp-chrome .tgl:hover{color:#a7f3d0;background:rgba(74,222,128,.14);
+  border-color:rgba(74,222,128,.35)}

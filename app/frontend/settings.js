@@ -34,6 +34,8 @@ function applyLangUI() {
 }
 
 function fill(s) {
+  // 旧值迁移：主题色 green 已更名为 mint（common.js 里保留同名别名，老配置仍能用）
+  if (s.accent === 'green') s.accent = 'mint';
   for (const k of FIELDS) {
     const el = document.getElementById(k);
     if (!el || s[k] === undefined) continue;

@@ -37,3 +37,52 @@
   background:rgba(255,255,255,.5)}
 .sk-liquid-mini .m-num{font-family:var(--f-num,"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif);
   font-size:12.5px;font-weight:600;color:#e8ecf4}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §1 · §2 · §3 · §4 · §5）—— 身份色「深海青 Aqua」
+   ============================================================================ */
+/* §3 身份色：水色更"水"（原 #10b981 偏草绿），杯体玻璃感加强 */
+.sk-liquid{
+  --key:#14b8a6;--ink-1:#f1f4fa;--ink-2:#a3b0c2;--ink-3:#7c879a;
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+.sk-liquid .l-body{background:rgba(9,14,22,.82);border-color:rgba(255,255,255,.14)}
+.sk-liquid .l-water{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--tone-b) 76%,#eafffd 24%),var(--tone-b))}
+.sk-liquid .l-cap{background:rgba(6,10,16,.44);backdrop-filter:blur(6px);color:var(--ink-2)}
+.sk-liquid .l-cap b{color:var(--ink-1)}
+/* §2 落位：原来压在水杯右上圆角上 -> 移到窗口右上角
+   （窗口 240 宽、杯 112 居中，两侧各有 64px 空档，放得下） */
+.sk-liquid .hp-chrome-slot{right:6px;top:6px}
+/* §1 变体③ ghost：无底板皮肤，按钮彻底去底，只留图标 + 描边投影 */
+.sk-liquid .hp-chrome .tgl{background:transparent;border-color:transparent;color:var(--ink-2);
+  opacity:.5;filter:drop-shadow(0 1px 3px rgba(0,0,0,.65))}
+.sk-liquid .hp-chrome:hover .tgl{opacity:1}
+.sk-liquid .hp-chrome .tgl:hover{color:#fff;background:rgba(255,255,255,.16);
+  border-color:rgba(255,255,255,.24)}
+/* §5.2 过渡曲线统一：液面 .4s ease -> .55s cubic-bezier(.22,1,.36,1) */
+.sk-liquid .l-water{transition:height .55s cubic-bezier(.22,1,.36,1)}
+.sk-liquid-mini .m-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}
+
+/* ---- §5.5 水波重做 ----
+   原实现：1 个波长 = 元素宽的 50%（viewBox 里画了 2 个完整周期），
+   而位移写的是元素宽的 33.33% -> 每圈短 1/3 个波长。实机元素宽 330px、
+   波长 165px、位移 110px，每圈错位 55px：水波每 7 秒（副波 4.5 秒）"咯噔"跳一下。
+   改成位移 50%（正好一个波长），配合 left 前移保证全程盖满杯体：
+     元素在 [-192.5, 137.5] -> [-27.5, 302.5]，始终包含杯体 [0, 110]。
+   顺带三处：
+     ① 两层波相位错开 1.6s（原来同相，叠在一起像一条带子）
+     ② 前后层反了 —— DOM 里 wb 在后所以画在 wa 上面，用 z-index 把 wb 压回后面
+     ③ 颜色断层 —— 波是实心 var(--tone-b)，而水体顶部是更亮的混合色，
+        两者在液面处接不上，让前景波用和液面顶部相同的颜色。 */
+.sk-liquid .l-wa,.sk-liquid .l-wb{will-change:transform}
+.sk-liquid .l-wa{left:-175%;width:300%;
+  fill:color-mix(in srgb,var(--tone-b) 74%,#eafffd 26%);
+  animation:skliq-wave-v2 7s linear infinite;z-index:2}
+.sk-liquid .l-wb{left:-175%;width:300%;fill:var(--tone-b);opacity:.35;
+  animation:skliq-wave-v2 4.5s linear infinite reverse;animation-delay:-1.6s;z-index:1}
+/* 数字浮层原来 z-index:2，会和两层波打平 -> 提到 3 保证永远压在水面上 */
+.sk-liquid .l-num{z-index:3}
+@keyframes skliq-wave-v2{from{transform:translateX(0)}to{transform:translateX(50%)}}
+/* §4 挂件形态同步换色 */
+.sk-liquid-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}

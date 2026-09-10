@@ -31,3 +31,22 @@
 .sk-battery-mini .m-batt{position:relative;width:26px;height:13px;border:1.5px solid rgba(160,170,190,.9);border-radius:3.5px;flex:none;padding:1.5px}
 .sk-battery-mini .m-batt::after{content:"";position:absolute;right:-4.5px;top:3px;width:2.5px;height:5px;border-radius:0 2px 2px 0;background:rgba(160,170,190,.9)}
 .sk-battery-mini .m-batt i{display:block;height:100%;width:0%;background:var(--tone-b);border-radius:1px;transition:width .35s ease}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §3 · §4 · §5）—— 身份色「石墨 Graphite」
+   ============================================================================ */
+/* §3 身份色：冷灰底 + 更清晰的电池轮廓（原 #aeb6c6 略脏） */
+.sk-battery{
+  --key:#22d3ee;--ink-1:#e9eef5;--ink-2:#94a0b0;--ink-3:#6a7486;
+  background:linear-gradient(160deg,#12171f,#0c1016);
+  border-color:rgba(148,163,184,.16);
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+.sk-battery .battery{border-color:#c3cad8}
+.sk-battery .battery::after{background:#c3cad8}
+/* §5.2 填充条过渡曲线统一 */
+.sk-battery .battery i,.sk-battery-mini .m-batt i{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §5.3 告警：填充条从"整块透明度闪烁"改成"亮度呼吸" */
+.sk-battery.danger .battery i{animation:hp-breathe-fill 1.6s ease-in-out infinite}
+/* §4 挂件形态同步换色 */
+.sk-battery-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}

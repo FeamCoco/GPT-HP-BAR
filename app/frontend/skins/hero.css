@@ -38,3 +38,22 @@
 .sk-hero-mini .m-ticks{position:absolute;inset:0;pointer-events:none;
   background:repeating-linear-gradient(90deg,transparent 0,transparent calc(20% - 1.5px),rgba(8,10,14,.75) calc(20% - 1.5px),rgba(8,10,14,.75) 20%)}
 .sk-hero-mini.nodata .m-fill{background:#6b7488}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §3 · §4 · §5）—— 身份色「午夜靛 Indigo」
+   ============================================================================ */
+/* §3 身份色：冷蓝紫底，让 10 段血槽的发光更"仪表感"（告急时仍走红描边） */
+.sk-hero:not(.danger){border-color:rgba(129,140,248,.18)}
+.sk-hero{
+  --key:#6366f1;--ink-1:#eaeeff;--ink-2:#98a2c0;--ink-3:#6f7a99;
+  background:linear-gradient(160deg,rgba(16,20,38,.88),rgba(9,12,24,.90));
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+.sk-hero .track{background:rgba(255,255,255,.08)}
+/* §5.2 血槽过渡曲线统一 */
+.sk-hero .b5,.sk-hero-mini .m-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §5.3 告警：血槽从"整块透明度闪烁"改成"亮度呼吸"，与数字的发光呼吸同频
+   （数字 .n5 上的 .danger-flash 由 app.css 全局接管） */
+.sk-hero.danger .b5{animation:hp-breathe-fill 1.6s ease-in-out infinite}
+/* §4 挂件形态同步换色 */
+.sk-hero-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}

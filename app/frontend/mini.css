@@ -6,3 +6,21 @@ html,body{margin:0;padding:0;background:transparent;overflow:hidden;height:100%;
    裁成一圈方形黑底，必须整体禁掉（皮肤内部元素的光晕不受影响）。
    pixel 皮肤的实心描边用 outline 补偿，见 pixel.css */
 #root > *{box-shadow:none!important}
+
+/* ============================================================================
+   挂件侧 v2（设计稿 design/theme-v2.css §5）—— 挂件窗口不加载 app.css，
+   这里补上等价的三条：状态色可插值 / 换肤入场 / 减少动态效果降级。
+   （各皮肤挂件形态的身份色见对应 skin CSS 的 §4 段）
+   ============================================================================ */
+@property --tone-a{syntax:'<color>';inherits:true;initial-value:#6ee7b7}
+@property --tone-b{syntax:'<color>';inherits:true;initial-value:#10b981}
+
+@keyframes hp-skin-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+/* 入场只用 transform/opacity，不影响 offsetWidth/offsetHeight，落位测量照旧准确 */
+#root > *{animation:hp-skin-in .22s cubic-bezier(.22,1,.36,1) both}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important}
+}

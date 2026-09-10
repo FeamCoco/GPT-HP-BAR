@@ -39,3 +39,30 @@
 .sk-pixel-mini .m-num{margin-left:5px;
   font-family:var(--f-mono,"Cascadia Mono","Cascadia Code",Consolas,"Courier New",monospace);
   font-size:11.5px;font-weight:700;color:#e8f0e8}
+
+
+/* ============================================================================
+   v2 落地（设计稿 design/theme-v2.css §1 · §2 · §3 · §5）—— 身份色「8-bit 复古」
+   ============================================================================ */
+/* §3 身份色：副行文字提亮（原 #57655c 对比度不足），方块底色收一点 */
+.sk-pixel{
+  --key:#10b981;--ink-1:#e8f0e8;--ink-2:#8fa697;--ink-3:#5d6f64;
+  background:#0b0d11;border-color:#303645;
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+.sk-pixel .p-sub{color:var(--ink-2)}
+.sk-pixel .p-title .p-player{color:var(--ink-3)}
+.sk-pixel .p-blocks i{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.08)}
+/* §2 落位：原来夹在 "CODEX-HP" 与 "PLAYER 1" 中间 -> 贴卡片右上内边距，标题行让位。
+   注 1：pixel 卡片本身没有 position，绝对定位会以外层窗口（#root）为参照、宽度比卡片大一圈，
+         所以这里补上 relative，让 right/top 相对卡片内边距计算。
+   注 2：像素皮肤没有紧凑形态（sizes.compact = null），按钮组只有 1 个齿轮（20px），
+         所以标题行让位给 26px 就够（设计稿写的 54px 是按 2 个按钮算的）。 */
+.sk-pixel{position:relative}
+.sk-pixel .hp-chrome{position:absolute;right:14px;top:11px;z-index:5}
+.sk-pixel .p-title{padding-right:26px}
+/* §1 变体④ retro：2px 硬边 + tone 色，跟 8-bit 语言对齐 */
+.sk-pixel .hp-chrome .tgl{border-radius:3px;border:2px solid #303645;background:#12151d;
+  color:var(--tone-b);opacity:.65;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
+.sk-pixel .hp-chrome .tgl svg{width:11px;height:11px;stroke-width:2.8}
+.sk-pixel .hp-chrome:hover .tgl{opacity:1}
+.sk-pixel .hp-chrome .tgl:hover{background:#1b2030;border-color:var(--tone-b);color:#fff}
