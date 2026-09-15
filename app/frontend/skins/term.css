@@ -46,3 +46,8 @@
   color:#3f8a58;opacity:.8}
 .sk-term .hp-chrome .tgl:hover{color:#a7f3d0;background:rgba(74,222,128,.14);
   border-color:rgba(74,222,128,.35)}
+
+/* ---- 紧凑形态：只留标题行 + 5h 主行，week 行与尾行（reset/credits/光标）收起 ----
+   wk-row 的 display 由 JS 写 inline style，必须 !important */
+body.compact .sk-term .wk-row,
+body.compact .sk-term .dim{display:none!important}

@@ -21,11 +21,13 @@ use tauri::{
 #[cfg(windows)]
 use windows::core::{BOOL, w};
 #[cfg(windows)]
-use windows::Win32::Foundation::{HWND, LPARAM, RECT, RPC_E_CHANGED_MODE, S_FALSE, S_OK};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, RPC_E_CHANGED_MODE, S_FALSE, S_OK};
 #[cfg(windows)]
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
+#[cfg(windows)]
+use windows::Win32::System::SystemInformation::GetTickCount64;
 #[cfg(windows)]
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Descendants};
 #[cfg(windows)]
@@ -34,10 +36,11 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{IVirtualDesktopManager, VirtualDesktopManager};
 #[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow,
-    GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, SetWindowPos,
-    ShowWindow, GWL_EXSTYLE, HWND_TOPMOST, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOSIZE,
-    SWP_SHOWWINDOW, WS_EX_TOPMOST,
+    EnumChildWindows, EnumWindows, FindWindowExW, FindWindowW, GetAncestor, GetClassNameW,
+    GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsWindow,
+    IsWindowVisible, SetWindowPos, ShowWindow, WindowFromPoint, GA_ROOT, GWL_EXSTYLE,
+    HWND_TOPMOST, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SWP_NOZORDER, SWP_SHOWWINDOW, WS_EX_TOPMOST,
 };
 
 /// 诊断子命令入口：探针进程声明 DPI 感知。
@@ -229,17 +232,21 @@ fn main() {
                 {
                     // 虚拟桌面切换后，可见的悬浮类窗口会被 cloaked 在旧桌面上
                     // （WS_VISIBLE 仍在，show() 是 no-op）——重挂到当前桌面；
-                    // 用户主动隐藏的（is_visible=false）保持隐藏
-                    for label in ["main", "mini"] {
-                        if let Some(w) = handle.get_webview_window(label) {
-                            if let Ok(h) = w.hwnd() {
-                                let h = HWND(h.0);
-                                if unsafe { IsWindowVisible(h).as_bool() } {
-                                    ensure_on_current_desktop(h);
+                    // 用户主动隐藏的（is_visible=false）保持隐藏。
+                    // ShowWindow 同样会同步 SendMessage 到属主线程，必须派发到主线程做
+                    let h2 = handle.clone();
+                    let _ = handle.run_on_main_thread(move || {
+                        for label in ["main", "mini"] {
+                            if let Some(w) = h2.get_webview_window(label) {
+                                if let Ok(h) = w.hwnd() {
+                                    let h = HWND(h.0);
+                                    if unsafe { IsWindowVisible(h).as_bool() } {
+                                        ensure_on_current_desktop(h);
+                                    }
                                 }
                             }
                         }
-                    }
+                    });
                     let st = handle.state::<AppState>();
                     position_mini(&handle, &st);
                 }
@@ -256,6 +263,20 @@ fn main() {
                 }
             });
 
+            // 保活线程：与数据轮询彻底解耦（fetch_all 三级回退最坏 16s+，不能让挂件陪葬）。
+            // 线程本体只负责 250ms 心跳，真正的检查与窗口操作全部派发到主线程执行
+            // （跨线程对窗口做 SetWindowPos/ShowWindow 会同步 SendMessage 到属主线程，
+            //  17:47 的 Application Hang 就是这么来的，见 position_mini 顶部说明）。
+            #[cfg(windows)]
+            {
+                let keep = app.handle().clone();
+                thread::spawn(move || loop {
+                    thread::sleep(Duration::from_millis(250));
+                    let k = keep.clone();
+                    let _ = keep.run_on_main_thread(move || mini_keepalive_tick(&k));
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![refresh_now, set_window_size, open_settings, get_settings, save_settings])
@@ -271,13 +292,161 @@ fn refresh_now() -> datasource::Usage {
 /// 主窗口尺寸过渡的世代号：连续切换时旧的补间线程看到世代变化立即退出
 static RESIZE_GEN: AtomicU64 = AtomicU64::new(0);
 
-/// 主窗口尺寸过渡动画：约 220ms / easeOutCubic（与 card.css 的
-/// cubic-bezier(.33,1,.68,1) 对齐，窗口与内容同步变形）。
+/// 已投递到主线程的补间帧序号。主线程只执行"最新一帧"——
+/// 透明窗每帧都要让 WebView2 重排，主线程偶尔慢一拍时，排队里的旧帧直接作废。
+/// 否则窗口会沿着一条滞后的队列慢慢爬，收尾拖出一段"追不上"的尾巴。
+static RESIZE_FRAME: AtomicU64 = AtomicU64::new(0);
+
+/// 尺寸过渡总时长（ms）——**必须与前端 app.js 的 RESIZE_MS 一致**。
 ///
-/// 位置策略（修"切换简约/完整版把窗口弹回右上角"）：
-///   - 贴屏幕左/右边（阈值 72 逻辑 px）→ 固定该边，展开/收起时向屏幕内侧生长；
-///   - 其余情况 → 固定左上角，保持用户拖到的位置；
-///   - 最后夹取进当前显示器工作区，避免尺寸变化后越界。
+/// 窗口补间和内容折叠是两个独立的时钟：窗口这边由本函数逐帧改窗口矩形，
+/// 内容那边由 CSS 过渡驱动。两者时长不一致时，垂直居中（app.css 里 body 是
+/// flex 居中）的卡片就会被"还在变形的窗口"推着漂移 —— 用户在收起动画里
+/// 看到的位置抖动就是这么来的。所以两边共用 240ms + 同一条缓动曲线。
+const RESIZE_MS: u64 = 240;
+
+/// 单帧调度粒度：按墙钟计时，单帧超时（透明窗每帧都要让 WebView2 重排）
+/// 就自动跳帧，总时长仍是 RESIZE_MS，不会像"固定 sleep 14ms × 16 帧"那样被拉伸。
+const RESIZE_STEP_MS: u64 = 12;
+
+/// 三个时钟共用的缓动曲线 —— CSS `cubic-bezier(.215,.61,.355,1)`。
+///
+/// app.js 的 EASE_OUT_CUBIC 与所有皮肤的几何过渡用的都是这一条，Rust 侧必须求
+/// **同一条曲线**，不能再用 `1-(1-p)³` 近似：两者在动画中段最大差约 2%，
+/// 240ms / 108px 的高度变化就是 ~2px 的错位，表现为内容被"还在变形的窗口"推着抖。
+const EASE_X1: f64 = 0.215;
+const EASE_Y1: f64 = 0.61;
+const EASE_X2: f64 = 0.355;
+const EASE_Y2: f64 = 1.0;
+
+/// CSS cubic-bezier(x1,y1,x2,y2) 在归一化时间 x 处的 y —— 与浏览器同款算法
+/// （牛顿迭代，退化时二分兜底）。逐点对齐后，窗口边界与内容边界在每一帧都
+/// 只差一个固定边距，中间帧不再有"内容到位了、窗口还差 2px"的相位差。
+fn cubic_bezier_y(x1: f64, y1: f64, x2: f64, y2: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    let cx = 3.0 * x1;
+    let bx = 3.0 * (x2 - x1) - cx;
+    let ax = 1.0 - cx - bx;
+    let cy = 3.0 * y1;
+    let by = 3.0 * (y2 - y1) - cy;
+    let ay = 1.0 - cy - by;
+    let sx = |t: f64| ((ax * t + bx) * t + cx) * t;
+    let dx = |t: f64| (3.0 * ax * t + 2.0 * bx) * t + cx;
+    let sy = |t: f64| ((ay * t + by) * t + cy) * t;
+    let mut t = x;
+    for _ in 0..8 {
+        let err = sx(t) - x;
+        if err.abs() < 1e-7 {
+            return sy(t);
+        }
+        let d = dx(t);
+        if d.abs() < 1e-9 {
+            break;
+        }
+        t -= err / d;
+    }
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    let mut t = x;
+    for _ in 0..32 {
+        let v = sx(t);
+        if (v - x).abs() < 1e-7 {
+            break;
+        }
+        if v < x {
+            lo = t;
+        } else {
+            hi = t;
+        }
+        t = 0.5 * (lo + hi);
+    }
+    sy(t)
+}
+
+/// 过渡进度 → 与 CSS 完全一致的插值系数
+fn ease_out(p: f64) -> f64 {
+    cubic_bezier_y(EASE_X1, EASE_Y1, EASE_X2, EASE_Y2, p)
+}
+
+/// 水平锚定边：贴屏右 → 固定**右**边缘；贴屏左 → 固定**左**边缘；自由浮动 → 固定左上角。
+#[derive(Clone, Copy)]
+enum HAnchor {
+    Left,
+    Right,
+    Free,
+}
+
+/// 垂直锚定边：贴屏底 → 固定**下**边缘；其余 → 固定**上**边缘。
+#[derive(Clone, Copy)]
+enum VAnchor {
+    Top,
+    Bottom,
+}
+
+/// 补间插值取整方向跟随变化方向（收缩向上取整 / 放大向下取整）：让窗口矩形
+/// 全程"不小于"内容，中间帧永远不会把内容裁掉一条边。
+/// 返回整数是因为下一步要拿它**反推**位置 —— 取整必须只发生一次。
+fn tween_size(from: f64, to: f64, e: f64) -> i32 {
+    let v = from + (to - from) * e;
+    let v = if to < from { v.ceil() } else { v.floor() };
+    v.max(1.0) as i32
+}
+
+/// 一次性提交窗口的**位置 + 尺寸**（单次 SetWindowPos）。
+///
+/// 原来一帧里先 set_size 再 set_position，是两次 SetWindowPos：中间那一瞬
+/// "尺寸已改、位置未改"，透明窗每帧都要让 WebView2 重排，这一瞬是能被合成出来的，
+/// 表现为边缘一帧的错位。合并成一次调用后，位置与尺寸在同一次 WM_WINDOWPOSCHANGING
+/// 里生效，中间态不存在。
+#[cfg(windows)]
+fn set_window_rect(win: &tauri::WebviewWindow, x: i32, y: i32, w: i32, h: i32) {
+    match win.hwnd() {
+        // 注意别写成 Ok(h)：会把函数参数 h（高度）遮蔽掉，
+        // SetWindowPos 的 cy 就会拿到窗口句柄，编译期 E0308 拦下。
+        Ok(handle) => unsafe {
+            // SWP_NOZORDER     保持 alwaysOnTop 的 z 序不动（不重排、不闪）
+            // SWP_NOACTIVATE   动画不抢焦点
+            // SWP_NOOWNERZORDER 不动属主窗口的 z 序
+            let _ = SetWindowPos(
+                HWND(handle.0),
+                None,
+                x,
+                y,
+                w,
+                h,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            );
+        },
+        Err(_) => {
+            let _ = win.set_size(PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+            let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_window_rect(win: &tauri::WebviewWindow, x: i32, y: i32, w: i32, h: i32) {
+    let _ = win.set_size(PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+    let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+/// 主窗口尺寸过渡动画：240ms，曲线与前端 CSS 过渡**逐点一致**。
+///
+/// ## 为什么"不动的边"必须真的不动
+/// 卡片在 body 里是 flex 居中，窗口平移 1px 内容就整体平移 1px —— 窗口那条
+/// "本该贴着屏幕边缘不动"的边只要抖，用户看到的就是四周一起抖。所以：
+///   1. 每帧**先算取整后的宽高**，再由它反推位置（固定右边缘时 x = 右边界 - 宽）。
+///      位置和尺寸只共享一次取整，误差不会被叠加成 ±1px 的来回跳。
+///   2. 位置与尺寸用**一次 SetWindowPos** 提交，不存在"改了尺寸还没改位置"的中间帧。
+///
+/// ## 锚定策略
+///   - 贴屏幕左/右边（72 逻辑 px 内）→ 固定该边，向屏幕内侧生长；
+///   - 贴屏幕下边 → 固定下边（对称于贴左/右）；其余 → 固定上边；
+///   - 两端都夹取进当前显示器工作区，避免尺寸变化后越界。
 fn animate_main_resize(app: &AppHandle, win: tauri::WebviewWindow, w: f64, h: f64) {
     let my_gen = RESIZE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
@@ -288,6 +457,7 @@ fn animate_main_resize(app: &AppHandle, win: tauri::WebviewWindow, w: f64, h: f6
         let (sw, sh) = (cur.width as f64, cur.height as f64);
         let (px, py) = (pos.x as f64, pos.y as f64);
         let (tw, th) = (w * scale, h * scale);
+
         // 尺寸不可测 / 变化可忽略：直接落定，不做补间
         if sw < 1.0 || sh < 1.0 || ((sw - tw).abs() < 1.5 && (sh - th).abs() < 1.5) {
             let _ = app.run_on_main_thread(move || {
@@ -296,43 +466,81 @@ fn animate_main_resize(app: &AppHandle, win: tauri::WebviewWindow, w: f64, h: f6
             return;
         }
 
-        // 目标位置：固定锚点 + 工作区夹取
-        let (mut tx, mut ty) = (px, py);
+        // ── 锚定边 + 工作区（整个动画只解析一次）────────────────────────────
+        let mut h_anchor = HAnchor::Free;
+        let mut v_anchor = VAnchor::Top;
+        let (mut ml, mut mt, mut mr, mut mb) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+        let mut has_work = false;
         if let Ok(Some(mon)) = win.current_monitor() {
             let mp = mon.position();
             let ms = mon.size();
-            let (ml, mt) = (mp.x as f64, mp.y as f64);
-            let (mr, mb) = (ml + ms.width as f64, mt + ms.height as f64);
-            let snap = 72.0 * scale;
-            if (mr - (px + sw)).abs() <= snap {
-                tx = mr - tw; // 贴右停靠：右边缘不动
-            } else if (px - ml).abs() <= snap {
-                tx = ml; // 贴左停靠：左边缘不动
+            if ms.width > 0 && ms.height > 0 {
+                ml = mp.x as f64;
+                mt = mp.y as f64;
+                mr = ml + ms.width as f64;
+                mb = mt + ms.height as f64;
+                has_work = true;
+                let snap = 72.0 * scale;
+                if (mr - (px + sw)).abs() <= snap {
+                    h_anchor = HAnchor::Right; // 贴右停靠：右边缘钉死
+                } else if (px - ml).abs() <= snap {
+                    h_anchor = HAnchor::Left; // 贴左停靠：左边缘钉死
+                }
+                if (mb - (py + sh)).abs() <= snap {
+                    v_anchor = VAnchor::Bottom; // 贴底停靠：下边缘钉死
+                }
             }
-            tx = tx.clamp(ml, (mr - tw).max(ml));
-            ty = ty.clamp(mt, (mb - th).max(mt));
         }
+        let (ml_i, mt_i) = (ml.round() as i32, mt.round() as i32);
+        let (mr_i, mb_i) = (mr.round() as i32, mb.round() as i32);
 
-        const STEPS: u32 = 16;
-        for i in 1..=STEPS {
+        let total = Duration::from_millis(RESIZE_MS);
+        let start = std::time::Instant::now();
+        loop {
             // 有新的切换请求：本次补间作废（避免两个线程互相拉扯）
             if RESIZE_GEN.load(Ordering::SeqCst) != my_gen {
                 return;
             }
-            let p = i as f64 / STEPS as f64;
-            let e = 1.0 - (1.0 - p).powi(3); // easeOutCubic
-            let cw = (sw + (tw - sw) * e).round().max(1.0) as u32;
-            let ch = (sh + (th - sh) * e).round().max(1.0) as u32;
-            let cx = (px + (tx - px) * e).round() as i32;
-            let cy = (py + (ty - py) * e).round() as i32;
+            let elapsed = start.elapsed();
+            let p = (elapsed.as_secs_f64() / total.as_secs_f64()).min(1.0);
+            let e = ease_out(p);
+            // ① 先定尺寸（只在这里取整一次）
+            let cw = tween_size(sw, tw, e);
+            let ch = tween_size(sh, th, e);
+            // ② 再由尺寸反推位置：锚定边恒等于锚点，不随取整摆动
+            let mut cx = match h_anchor {
+                HAnchor::Right => mr_i - cw,
+                HAnchor::Left => ml_i,
+                HAnchor::Free => px.round() as i32,
+            };
+            let mut cy = match v_anchor {
+                VAnchor::Bottom => mb_i - ch,
+                VAnchor::Top => py.round() as i32,
+            };
+            // ③ 夹进工作区（贴边时上界/下界恰好等于锚点值，等于没夹）
+            if has_work {
+                cx = cx.clamp(ml_i, (mr_i - cw).max(ml_i));
+                cy = cy.clamp(mt_i, (mb_i - ch).max(mt_i));
+            }
+
+            let last = p >= 1.0;
+            let seq = RESIZE_FRAME.fetch_add(1, Ordering::SeqCst) + 1;
             let w2 = win.clone();
             let _ = app.run_on_main_thread(move || {
-                let _ = w2.set_size(PhysicalSize::new(cw, ch));
-                let _ = w2.set_position(tauri::PhysicalPosition::new(cx, cy));
+                // 已有更新的帧在排队 → 这一帧是滞后的，丢弃（跳帧而不是拖尾巴）
+                if !last && RESIZE_FRAME.load(Ordering::SeqCst) != seq {
+                    return;
+                }
+                set_window_rect(&w2, cx, cy, cw, ch);
             });
-            if i < STEPS {
-                thread::sleep(Duration::from_millis(14));
+            if last {
+                break;
             }
+            let spent = start.elapsed();
+            if spent >= total {
+                continue; // 已经超时：再跑一轮把最终位置落精确
+            }
+            thread::sleep((total - spent).min(Duration::from_millis(RESIZE_STEP_MS)));
         }
     });
 }
@@ -345,9 +553,22 @@ fn set_window_size(window: tauri::WebviewWindow, w: f64, h: f64, app: AppHandle,
         if let Ok(mut g) = state.mini_size.lock() {
             *g = (w, h);
         }
-        window.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
+        // set_size 与重定位都派发到主线程：挂件可能是任务栏子窗口，
+        // 跨线程改窗口会同步 SendMessage 到属主线程（线程纪律见 position_mini）
         #[cfg(windows)]
-        position_mini(&app, &state);
+        {
+            let app2 = app.clone();
+            let win2 = window.clone();
+            let _ = app.run_on_main_thread(move || {
+                let _ = win2.set_size(LogicalSize::new(w, h));
+                let st = app2.state::<AppState>();
+                position_mini(&app2, &st);
+            });
+        }
+        #[cfg(not(windows))]
+        {
+            window.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
+        }
     } else {
         // 主窗口：平滑过渡到新尺寸，并保持当前位置（不再强制拉回右上角）
         animate_main_resize(&app, window, w, h);
@@ -823,15 +1044,87 @@ fn diag_mini(info: &BandInfo, pos: &str, x: i32, y: i32, mw: i32, gaps: &[(i32, 
     }
 }
 
-/// 任务栏挂件定位：顶层置顶窗浮在任务栏带上（v1 简化版，视觉等同嵌入），
-/// 在空闲区间里选离锚点最近的位置，避开图标群/托盘/开始按钮/第三方挂件。
-/// 落位前对占位做一次交叉校验，校验不过再退到最大空隙中间。
+// 【不要复活这个方案】曾把挂件 SetParent 成 Shell_TrayWnd 的子窗口来根治
+// "被任务栏盖住 2 秒"（v0.5 第一版），结果跨进程父子把本进程主线程挂死了：
+//   - SetParent/ShowWindow 作用在跨进程父窗口下的子窗口上时，会同步
+//     SendMessage 到父窗口（explorer）的属主线程，热路径里直接变 Application Hang；
+//   - 子窗口的输入队列被挂到 explorer 上，explorer 忙时本进程一起卡住。
+// 实测两次挂起（事件查看器 Event 1002 @17:47、mini-diag.log 里 17:45:14 与
+// 18:37:49 各只留下落位行、之后再无输出），用户表现为"点收起没反应"。
+// 现在只用浮动置顶 + 保活 tick 的命中测试兜底（见 mini_keepalive_tick）。
+
+/// 保活线程的状态诊断：追加到 %APPDATA%/GPT-HP-BAR/mini-diag.log，
+/// 仅在 (存活, 被遮挡) 组合变化时写一行 —— 挂件"消失"可以事后归因。
+#[cfg(windows)]
+fn watch_diag(alive: bool, occluded: bool) {
+    static LAST: Mutex<(bool, bool)> = Mutex::new((true, false));
+    let Ok(mut last) = LAST.lock() else {
+        return;
+    };
+    if *last == (alive, occluded) {
+        return;
+    }
+    *last = (alive, occluded);
+    drop(last);
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(settings::config_path().with_file_name("mini-diag.log"))
+    {
+        use std::io::Write;
+        let _ = writeln!(f, "watch t={t} alive={alive} occluded={occluded}");
+    }
+}
+
+/// 挂件窗口句柄失效后的自愈：重建同名 "mini" 窗口，前端加载后走
+/// set_window_size → position_mini 自动重新落位。
+/// Tauri 管理器里 label 还被旧窗口占着时 builder 会报错 —— 忽略，10s 节流后再试。
+#[cfg(windows)]
+fn try_rebuild_mini(app: &AppHandle) {
+    static LAST_TRY: Mutex<u64> = Mutex::new(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let Ok(mut last) = LAST_TRY.lock() else { return };
+    if now.saturating_sub(*last) < 10 {
+        return;
+    }
+    *last = now;
+    drop(last);
+    let _ = WebviewWindowBuilder::new(app, "mini", WebviewUrl::App("mini.html".into()))
+        .title("GPT-HP-BAR 任务栏")
+        .inner_size(150.0, 44.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .resizable(false)
+        .skip_taskbar(true)
+        .shadow(false)
+        .visible(false)
+        .build();
+}
+
+/// 任务栏挂件定位（计算部分，任意线程可调）：读设置 → 量尺寸 → plan_mini 选位 →
+/// 交叉校验（校验不过退到最大空隙中间），然后把"应用落位"派发到主线程执行。
+///
+/// 【线程纪律】窗口位置/显隐变更（SetWindowPos、ShowWindow）会同步 SendMessage 到
+/// 窗口的属主线程；挂件窗口属主是主线程，而启动阶段主线程正在初始化 WebView2、
+/// 不泵消息 —— 在轮询/保活线程里直接做这些调用会把后台线程卡死在 SendMessage 上。
+/// 因此：后台线程只做无副作用的读取与计算，一切窗口变更走 run_on_main_thread。
 #[cfg(windows)]
 fn position_mini(app: &AppHandle, state: &State<AppState>) {
     let s = state.settings.lock().unwrap().clone();
     let Some(win) = app.get_webview_window("mini") else { return };
     if !s.mini_enabled {
-        let _ = win.hide();
+        let win2 = win.clone();
+        let _ = app.run_on_main_thread(move || {
+            apply_mini_layout(&win2, 0, 0, false);
+        });
         return;
     }
     let Some(info) = taskbar_band() else { return };
@@ -872,23 +1165,102 @@ fn position_mini(app: &AppHandle, state: &State<AppState>) {
     }
     diag_mini(&info, s.mini_pos.as_str(), x, y, mw, &gaps, pad);
 
-    if let Ok(hwnd) = win.hwnd() {
-        unsafe {
-            // HWND_TOPMOST：挂件必须稳定压在任务栏（同为 topmost）之上，否则会被
-            // 任务栏整体遮挡（IsWindowVisible 仍为 true 但完全不可见）；
-            // SWP_SHOWWINDOW 原子显示，show() 仅作 Tauri 侧状态兜底
-            let _ = SetWindowPos(
-                HWND(hwnd.0),
-                Some(HWND_TOPMOST),
-                x,
-                y,
-                0,
-                0,
-                SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-            );
-        }
+    let win2 = win.clone();
+    let _ = app.run_on_main_thread(move || {
+        apply_mini_layout(&win2, x, y, true);
+    });
+}
+
+/// 落位应用（仅主线程调用）：任务栏带内物理坐标 → HWND_TOPMOST + 原子显示。
+/// 只做同一线程内的窗口操作，不碰父子关系（跨进程 SetParent 会挂死主线程，
+/// 见上方那段"不要复活这个方案"的说明）。
+#[cfg(windows)]
+fn apply_mini_layout(win: &tauri::WebviewWindow, x: i32, y: i32, enabled: bool) {
+    let Ok(h) = win.hwnd() else { return };
+    let hwnd = HWND(h.0);
+    if !unsafe { IsWindow(Some(hwnd)).as_bool() } {
+        return;
+    }
+    if !enabled {
+        let _ = win.hide();
+        return;
+    }
+    unsafe {
+        // HWND_TOPMOST：挂件必须稳定压在任务栏（同为 topmost）之上，否则会被
+        // 任务栏整体遮挡（IsWindowVisible 仍为 true 但完全不可见）；
+        // SWP_SHOWWINDOW 原子显示；z-order 被抢时由保活 tick 的命中测试兜底
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            x,
+            y,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
     }
     let _ = win.show();
+}
+
+/// 保活 tick（仅主线程执行，由保活线程每 250ms 派发）。
+///
+/// 只做两件低开销、无副作用的事：
+///   1) 挂件 HWND 失效 → 节流重建（自愈）；
+///   2) `WindowFromPoint(挂件中心)` 命中测试，**只在真被别的窗口盖住时**才重置顶。
+/// 点任务栏后挂件的恢复延迟因此从"轮询周期 2s"降到 250ms 级（v0.4.6 的实测问题），
+/// 而且空闲时一次 SetWindowPos 都不发 —— 不给主线程制造 z-order churn。
+#[cfg(windows)]
+fn mini_keepalive_tick(app: &AppHandle) {
+    // 两次重置顶的最小间隔：命中测试有抖动时也不至于一直抢 z-order
+    const MIN_REASSERT_MS: u64 = 600;
+    static LAST_ASSERT_MS: AtomicU64 = AtomicU64::new(0);
+
+    let st = app.state::<AppState>();
+    let s = st.settings.lock().map(|g| g.clone()).unwrap_or_default();
+    let Some(win) = app.get_webview_window("mini") else {
+        return;
+    };
+    let Ok(h) = win.hwnd() else { return };
+    let hwnd = HWND(h.0);
+    if !unsafe { IsWindow(Some(hwnd)).as_bool() } {
+        watch_diag(false, false);
+        try_rebuild_mini(app);
+        return;
+    }
+    if !s.mini_enabled {
+        return; // 显隐由 position_mini / save_settings 负责，别跟它抢
+    }
+    // 命中挂件中心的窗口取 GA_ROOT 后与挂件比对
+    // （WebView2 在窗口内部还有一层子 HWND，直接比 hwnd 会永远"被遮挡"）
+    let mut r = RECT::default();
+    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() || r.right <= r.left {
+        return;
+    }
+    let visible = unsafe { IsWindowVisible(hwnd).as_bool() };
+    let center = POINT {
+        x: (r.left + r.right) / 2,
+        y: (r.top + r.bottom) / 2,
+    };
+    let hit = unsafe { WindowFromPoint(center) };
+    let ours = unsafe { GetAncestor(hit, GA_ROOT) } == hwnd;
+    if visible && !ours {
+        let now = unsafe { GetTickCount64() };
+        if now.saturating_sub(LAST_ASSERT_MS.load(Ordering::Relaxed)) >= MIN_REASSERT_MS {
+            LAST_ASSERT_MS.store(now, Ordering::Relaxed);
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    Some(HWND_TOPMOST),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
+    watch_diag(true, visible && !ours);
 }
 
 #[cfg(not(windows))]
@@ -963,6 +1335,17 @@ fn get_settings(state: State<AppState>) -> settings::Settings {
     s
 }
 
+/// 主题色合法值：必须与前端 skins/common.js 的 HP.ACCENTS 对齐（green 为旧值别名）。
+/// 改 HP.ACCENTS 时必须同步这里 —— 白名单漏了新色，用户选完保存就会被静默改回 auto
+/// （v0.4.6 里 mint/sky/violet/rose 就这样丢了，见 docs/NEXT-PLAN-0.5.md §4）。
+const ACCENT_VALUES: &[&str] = &["auto", "mint", "cyan", "sky", "violet", "amber", "rose", "green"];
+/// 皮肤 id 合法值：与 frontend/skins/*.js 的注册名对齐
+const SKIN_IDS: &[&str] = &[
+    "card", "hero", "glass", "term", "tile", "battery", "gauge", "neon", "liquid", "pixel",
+];
+/// 任务栏挂件位置合法值
+const MINI_POS_VALUES: &[&str] = &["left", "center", "right"];
+
 /// 保存设置：写盘 + 自启注册表 + 更新轮询间隔 + 推送给悬浮窗实时应用
 #[tauri::command]
 fn save_settings(app: AppHandle, s: settings::Settings, state: State<AppState>) -> Result<settings::Settings, String> {
@@ -970,8 +1353,14 @@ fn save_settings(app: AppHandle, s: settings::Settings, state: State<AppState>) 
     s.font_scale = s.font_scale.clamp(80, 150);
     s.opacity = s.opacity.clamp(40, 100);
     s.poll_secs = s.poll_secs.clamp(10, 600);
-    if !["auto", "green", "amber", "cyan"].contains(&s.accent.as_str()) {
+    if !ACCENT_VALUES.contains(&s.accent.as_str()) {
         s.accent = "auto".into();
+    }
+    if !SKIN_IDS.contains(&s.skin.as_str()) {
+        s.skin = "card".into();
+    }
+    if !MINI_POS_VALUES.contains(&s.mini_pos.as_str()) {
+        s.mini_pos = "right".into();
     }
     if !["zh", "en"].contains(&s.lang.as_str()) {
         s.lang = settings::default_lang();

@@ -39,3 +39,11 @@
 .sk-glass .hp-chrome .tgl{border-radius:999px}
 /* §5.3 告警：闪电从"整块透明度闪烁"改成"光晕 + 亮度呼吸" */
 .sk-glass.danger .bolt{animation:hp-breathe-icon 1.6s ease-in-out infinite}
+
+/* ---- 紧凑形态：胶囊只留闪电 + 大数字 + 按钮，倒计时/周窗口与分隔线全部收起 ----
+   cd/week/sep 的 display 由 JS 写 inline style，必须 !important；
+   宽度收窄到 190px（闪电 16 + 数字 ~48 + 按钮组 46 + 间距/内边距），窗口 206px */
+body.compact .sk-glass{width:190px}
+body.compact .sk-glass .cd,
+body.compact .sk-glass .week,
+body.compact .sk-glass .sep{display:none!important}

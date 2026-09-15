@@ -180,7 +180,7 @@ $("#rescan").addEventListener("click", () => {
 });
 
 $("#reset").addEventListener("click", async () => {
-  const def = { skin: "card", font_scale: 100, opacity: 96, accent: "auto", show_week: true, show_credits: true, show_countdown: true, show_email: true, poll_secs: 60, autostart: false };
+  const def = { skin: "card", font_scale: 100, opacity: 96, accent: "auto", show_week: true, show_credits: true, show_countdown: true, show_email: true, poll_secs: 60, autostart: false, mini_enabled: true, mini_pos: "right" };
   fill(def);
   await persist();
 });

@@ -9,13 +9,13 @@ pub struct Settings {
     pub skin: String,     // 皮肤 id（skins/*.js 注册名）
     pub font_scale: u32,  // 80-150，100=原始
     pub opacity: u32,     // 40-100
-    pub accent: String,   // auto | green | amber | cyan
-    pub lang: String,     // 界面语言 zh | en
+    pub accent: String,  // auto | mint | cyan | sky | violet | amber | rose（green=旧值别名，main.rs ACCENT_VALUES 校验）
+    pub lang: String,    // 界面语言 zh | en
     pub show_week: bool,
     pub show_credits: bool,
     pub show_countdown: bool,
     pub show_email: bool,
-    pub poll_secs: u32,   // 30-600
+    pub poll_secs: u32,  // 30-600
     pub autostart: bool,
     pub mini_enabled: bool,    // 任务栏挂件
     pub mini_pos: String,      // left | center | right
