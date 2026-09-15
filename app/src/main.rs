@@ -471,13 +471,21 @@ fn alive_ping(label: String) {
     };
 }
 
-/// 用系统默认浏览器打开链接（设置面板的"打开登录说明"用）。
-/// 只放行 http/https，避免把前端不可信输入当任意协议/文件打开；
+/// 允许 `open_url` 打开的唯一链接——设置面板的「打开 Codex 登录说明」按钮。
+/// **改这里即可**：如需改指向，只改这个常量（前端 `settings.js` 的
+/// `CODEX_LOGIN_URL` 要同步改为同一地址）。
+const OPEN_URL_ALLOWED: &str = "https://github.com/openai/codex";
+
+/// 用系统默认浏览器打开链接（设置面板的「打开 Codex 登录说明」用）。
+///
+/// **安全约束（白名单常量）**：只接受与 `OPEN_URL_ALLOWED` **完全相等**的 URL，
+/// 不相等一律返回 `Err`。这里刻意**不做**任意 http/https 前缀放行——即使前端被注入
+/// 脚本，也无法诱导本命令打开任意外链/协议，从根上消除注入面。
 /// 用 rundll32 url.dll 打开可避免拉起一个控制台窗口。
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("仅允许 http(s) 链接".into());
+    if url.as_str() != OPEN_URL_ALLOWED {
+        return Err(format!("仅允许打开内置白名单链接 {}", OPEN_URL_ALLOWED));
     }
     #[cfg(windows)]
     {
@@ -492,7 +500,6 @@ fn open_url(url: String) -> Result<(), String> {
     }
     #[cfg(not(windows))]
     {
-        let _ = url;
         Err("仅 Windows 支持".into())
     }
 }
@@ -1272,6 +1279,9 @@ struct WatchInfo {
     occluded_by: Option<isize>,
     /// 距最后一次前端 ack 的秒数；< 0 表示从未 ack
     ack_age: i64,
+    /// Shell_TrayWnd 实测厚度（短边，物理像素）；< 0 表示读取失败。
+    /// 与 `TASKBAR_MIN_DIM` 对比即可标定"挂件该让位却没让位"的阈值。
+    band_dim: i32,
 }
 
 /// 保活线程的状态诊断：追加到 %APPDATA%/GPT-HP-BAR/mini-diag.log。
@@ -1303,8 +1313,9 @@ fn watch_diag(info: &WatchInfo) {
         use std::io::Write;
         let _ = writeln!(
             f,
-            "watch t={t} alive={} occluded={} cloaked={} topmost={} occluded_by={} ack_age={}",
-            info.alive, info.occluded, info.cloaked, info.topmost, occluded_by, info.ack_age
+            "watch t={t} alive={} occluded={} cloaked={} topmost={} occluded_by={} ack_age={} band_dim={} min_dim={}",
+            info.alive, info.occluded, info.cloaked, info.topmost, occluded_by, info.ack_age,
+            info.band_dim, TASKBAR_MIN_DIM
         );
     }
 }
@@ -1339,6 +1350,19 @@ fn maybe_reload_stale(app: &AppHandle, label: &str, enabled: bool, stale_secs: u
     }
     last.store(now, Ordering::Relaxed);
     let _ = w.eval("location.reload()");
+}
+
+/// Shell_TrayWnd 的"厚度"（短边，物理像素）：自动隐藏把任务栏收成细条时会变得很小。
+/// 返回 `None` 表示任务栏窗口未找到 / 矩形读取失败。**纯读取**，不改动任何窗口状态，
+/// 供诊断（watch 行）打印实测厚度以标定 `TASKBAR_MIN_DIM`。
+#[cfg(windows)]
+fn taskbar_band_dim() -> Option<i32> {
+    unsafe {
+        let tray = FindWindowW(w!("Shell_TrayWnd"), None).ok()?;
+        let mut r = RECT::default();
+        GetWindowRect(tray, &mut r).ok()?;
+        Some((r.right - r.left).min(r.bottom - r.top))
+    }
 }
 
 /// 量取"任务栏是否在位"：Shell_TrayWnd 可见性 + Win32 矩形 vs 挂件所在显示器矩形。
@@ -1403,9 +1427,12 @@ fn mini_keepalive_tick(app: &AppHandle) {
     let Some(win) = app.get_webview_window("mini") else { return };
     let Ok(h) = win.hwnd() else { return };
     let hwnd = HWND(h.0);
+    // 任务栏实测厚度（短边）：写进 watch 行，供异地机器标定 TASKBAR_MIN_DIM
+    let band_dim = taskbar_band_dim().unwrap_or(-1);
     if !unsafe { IsWindow(Some(hwnd)).as_bool() } {
         watch_diag(&WatchInfo {
             alive: false, occluded: false, cloaked: false, topmost: false, occluded_by: None, ack_age: -1,
+            band_dim,
         });
         try_rebuild_mini(app);
         return;
@@ -1457,6 +1484,7 @@ fn mini_keepalive_tick(app: &AppHandle) {
         topmost,
         occluded_by: if occluded { Some(root.0 as isize) } else { None },
         ack_age: ack_age_secs("mini"),
+        band_dim,
     });
 }
 
@@ -1622,6 +1650,13 @@ fn is_cloaked_flags(flags: u32) -> bool {
     flags != 0
 }
 
+/// 任务栏"在位"判定的最小厚度（物理像素）：自动隐藏会把任务栏收成贴边的一条，
+/// 其短边（厚度）低于此值即判为"不在位"，挂件应主动让位。
+/// **初值 4（架构设计 TASKBAR_MIN_DIM），需实机标定：改这里即可。**
+/// `--probe-taskbar` 与 mini-diag.log 的 watch 行都会打印实测 band 厚度，据此判断调大/调小。
+#[cfg(windows)]
+const TASKBAR_MIN_DIM: i32 = 4;
+
 /// 任务栏是否"在位可落位"：`visible` = `IsWindowVisible(Shell_TrayWnd)`；
 /// `band` / `monitor` 均为物理像素矩形。纯函数，便于单测。
 ///
@@ -1633,7 +1668,7 @@ fn taskbar_present(visible: bool, band: RECT, monitor: RECT) -> bool {
     if !visible {
         return false;
     }
-    if band.right - band.left <= 8 || band.bottom - band.top <= 8 {
+    if band.right - band.left <= TASKBAR_MIN_DIM || band.bottom - band.top <= TASKBAR_MIN_DIM {
         return false;
     }
     band.right > monitor.left
@@ -1935,13 +1970,15 @@ fn taskbar_probe() {
             return;
         }
         println!(
-            "band = ({},{})-({},{})  w={} h={}",
+            "band = ({},{})-({},{})  w={} h={}  min_dim={} (TASKBAR_MIN_DIM={})",
             tr.left,
             tr.top,
             tr.right,
             tr.bottom,
             tr.right - tr.left,
-            tr.bottom - tr.top
+            tr.bottom - tr.top,
+            (tr.right - tr.left).min(tr.bottom - tr.top),
+            TASKBAR_MIN_DIM
         );
         for cls in ["TrayNotifyWnd", "Start", "MSTaskSwWClass", "ReBarWindow32"] {
             let cls_w = windows::core::HSTRING::from(cls);

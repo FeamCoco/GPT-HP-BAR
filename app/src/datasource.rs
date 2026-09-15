@@ -335,35 +335,47 @@ fn looks_like_network_error(msg: &str) -> bool {
 
 /// 数据源失败归因（纯函数，便于单测）：把三级回退的结果收敛为前端可引导的状态。
 ///
-/// 优先级（自上而下，命中即返回）：
+/// 优先级（自上而下，命中即返回）——**配置类判定先于网络启发式**。原因：在一台完全没有
+/// 登录态的机器上，三级回退（rest / app-server / relay）必然超时或失败，
+/// `looks_like_network_error` 极易命中；若让网络判定优先，会把"该去登录 Codex"的用户
+/// 误引导成"检查网络/代理"。所以先判"有没有凭据"，再谈"是不是网络问题"：
 ///   1. `ok`       —— 成功取到用量；
-///   2. `network`  —— 失败原因里出现网络类错误（超时/连接/5xx），引导“稍后重试”；
-///   3. `no_login` —— 本地没有任何可用凭据（既无 OAuth access_token，也无中转配置），
-///                    引导运行 `codex login`（这是首要动作）；
-///   4. `no_relay` —— 已登录但仍未配置中转，引导在 config.toml 配 base_url + 密钥；
+///   2. `no_login` —— 本地没有任何可用凭据（既无 OAuth access_token，也没有 API key），
+///                    首要动作是登录，引导运行 `codex login`；
+///   3. `no_relay` —— 有 key 但缺 base_url（config.toml 只配了一半），引导补齐 base_url；
+///   4. `network`  —— 已备齐凭据、失败原因里出现网络类错误（超时/连接/5xx），引导"稍后重试"；
 ///   5. `none`     —— 其余（已配置却全部失败：relay 404、接口不兼容等），通用提示。
 ///
-/// 入参：
+/// 入参（均为"具备条件"判定，不含任何密钥值）：
 ///   - `ok`：是否成功；
 ///   - `has_login`：auth.json 是否提供了 ChatGPT OAuth access_token；
-///   - `has_relay`：是否同时具备 base_url 与密钥（config.toml bearer / api_key）；
+///   - `has_base`：config.toml 是否配置了 base_url；
+///   - `has_key`：是否有可用密钥（config.toml bearer / auth.json api_key）；
 ///   - `network_error`：attempted 里是否含网络类错误。
-pub fn classify_status(ok: bool, has_login: bool, has_relay: bool, network_error: bool) -> &'static str {
+pub fn classify_status(
+    ok: bool,
+    has_login: bool,
+    has_base: bool,
+    has_key: bool,
+    network_error: bool,
+) -> &'static str {
     if ok {
         return "ok";
     }
+    // —— 配置类判定（先于网络启发式）——
+    // 无任何可用凭据：既未 OAuth 登录，也没有 API key → 首要动作是登录
+    if !has_login && !has_key {
+        return "no_login";
+    }
+    // 有密钥但缺中转地址：只差 base_url → 引导补齐
+    if !has_base && has_key {
+        return "no_relay";
+    }
+    // —— 网络类失败（可重试）——
     if network_error {
         return "network";
     }
-    if !has_login && !has_relay {
-        return "no_login";
-    }
-    if has_login && !has_relay {
-        return "no_relay";
-    }
-    if !has_login {
-        return "no_login";
-    }
+    // —— 其余 ——
     "none"
 }
 
@@ -374,14 +386,12 @@ pub fn fetch_all() -> Usage {
     let account_id = auth.as_ref().and_then(|a| a.id_token.as_ref())
         .and_then(|t| identity_from_id_token(t).1.clone());
 
-    // 归因所需的两个“具备条件”判定（不涉及任何密钥值）
+    // 归因所需的“具备条件”判定（不涉及任何密钥值）
     let has_login = auth.as_ref().map_or(false, |a| a.access_token.is_some());
-    let has_relay = {
-        let base = config.as_ref().and_then(|c| c.0.clone());
-        let key = config.as_ref().and_then(|c| c.1.clone())
-            .or_else(|| auth.as_ref().and_then(|a| a.api_key.clone()));
-        base.is_some() && key.is_some()
-    };
+    let has_base = config.as_ref().and_then(|c| c.0.clone()).is_some();
+    let has_key = config.as_ref().and_then(|c| c.1.clone())
+        .or_else(|| auth.as_ref().and_then(|a| a.api_key.clone()))
+        .is_some();
 
     let mut attempted: Vec<String> = Vec::new();
 
@@ -432,7 +442,7 @@ pub fn fetch_all() -> Usage {
 
     // 失败归因：结果状态收敛为 ok/no_login/no_relay/network/none，供前端三态引导
     let network_error = attempted.iter().any(|e| looks_like_network_error(e));
-    usage.status = classify_status(usage.ok, has_login, has_relay, network_error).to_string();
+    usage.status = classify_status(usage.ok, has_login, has_base, has_key, network_error).to_string();
 
     // 身份信息（任何来源都可能没有，从本地 auth 补齐）
     if let Some(a) = auth {
@@ -482,34 +492,44 @@ pub fn probe() {
 mod tests {
     use super::{classify_status, looks_like_network_error};
 
+    // classify_status 参数顺序：ok, has_login, has_base, has_key, network_error
+
     #[test]
     fn status_ok_wins() {
-        assert_eq!(classify_status(true, false, false, true), "ok");
-        assert_eq!(classify_status(true, true, true, false), "ok");
+        assert_eq!(classify_status(true, false, false, false, true), "ok");
+        assert_eq!(classify_status(true, true, true, true, false), "ok");
     }
 
     #[test]
-    fn status_network_precedes_credentials() {
-        // 网络错误优先于“未登录/未配置”——它是可重试的瞬时故障
-        assert_eq!(classify_status(false, false, false, true), "network");
-        assert_eq!(classify_status(false, true, true, true), "network");
+    fn status_no_login_beats_network_heuristic() {
+        // 关键回归：完全没有凭据（既没登录、也没 key）时，即使失败原因里含超时等网络类
+        // 错误，也必须归为 no_login —— 用户要做的是登录 Codex，而不是查网络/代理。
+        assert_eq!(classify_status(false, false, false, false, true), "no_login");
+        assert_eq!(classify_status(false, false, false, false, false), "no_login");
+        // 有 base_url 但既没登录也没 key → 仍无凭据 → no_login
+        assert_eq!(classify_status(false, false, true, false, true), "no_login");
     }
 
     #[test]
-    fn status_no_login_when_nothing_configured() {
-        assert_eq!(classify_status(false, false, false, false), "no_login");
-        // 有中转但没登录：没凭据仍是首要动作 → 仍引导登录
-        assert_eq!(classify_status(false, false, true, false), "no_login");
+    fn status_no_relay_when_key_without_base() {
+        // 有密钥却缺 base_url（config.toml 只配了一半）→ 引导补齐中转地址
+        assert_eq!(classify_status(false, false, false, true, false), "no_relay");
+        // 即使同时命中网络错误，缺 base_url 仍是首要问题
+        assert_eq!(classify_status(false, false, false, true, true), "no_relay");
     }
 
     #[test]
-    fn status_no_relay_when_logged_in_but_relay_missing() {
-        assert_eq!(classify_status(false, true, false, false), "no_relay");
+    fn status_network_only_after_credentials_ok() {
+        // 凭据齐备（登录，或有 key+base_url）之后，网络类失败才归 network（可重试）
+        assert_eq!(classify_status(false, true, true, false, true), "network");
+        assert_eq!(classify_status(false, true, true, true, true), "network");
     }
 
     #[test]
     fn status_none_when_configured_but_failed() {
-        assert_eq!(classify_status(false, true, true, false), "none");
+        // 配置齐备却全部失败（relay 404 / 接口不兼容等）→ 通用提示
+        assert_eq!(classify_status(false, true, true, true, false), "none");
+        assert_eq!(classify_status(false, true, true, false, false), "none");
     }
 
     #[test]
