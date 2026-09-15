@@ -4,7 +4,7 @@
 //! 设置持久化（settings.rs）→ emit "settings" → 前端应用字体/透明度/显示项；
 //! 托盘图标按剩余额度动态重绘；`--probe` 走调试台打印数据源探测结果。
 
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(all(not(debug_assertions), not(test)), windows_subsystem = "windows")]
 
 mod datasource;
 mod settings;
