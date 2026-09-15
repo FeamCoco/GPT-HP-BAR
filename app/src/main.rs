@@ -461,14 +461,21 @@ fn last_ack(label: &str) -> u64 {
     }
 }
 
-/// 前端心跳命令：记录各窗口最后 ack 时间戳（无副作用、可从任意线程调用）。
+/// 前端心跳命令：记录各窗口最后 ack 时间戳（仅写原子量，可从任意线程调用）。
+/// 收到 ack 同时清零该窗口的"连续重载"计数与"已放弃"标志 —— 恢复正常后不受历史影响。
 #[tauri::command]
 fn alive_ping(label: String) {
     let now = now_secs();
-    match label.as_str() {
+    let l = if label.as_str() == "mini" { "mini" } else { "main" };
+    match l {
         "mini" => ACK_MINI.store(now, Ordering::Relaxed),
         _ => ACK_MAIN.store(now, Ordering::Relaxed),
     };
+    #[cfg(windows)]
+    {
+        reload_tries(l).store(0, Ordering::Relaxed);
+        reload_gaveup_flag(l).store(false, Ordering::Relaxed);
+    }
 }
 
 /// 允许 `open_url` 打开的唯一链接——设置面板的「打开 Codex 登录说明」按钮。
@@ -1330,7 +1337,48 @@ fn ack_age_secs(label: &str) -> i64 {
     now_secs().saturating_sub(last) as i64
 }
 
+/// 连续重载仍收不到 ack 的最大次数：超过即判定"重载也救不回来"（如渲染进程永久假死），
+/// 停止重载，避免每 ≥30s 无限重载造成的持续闪烁。具名常量，便于实机调整。
+#[cfg(windows)]
+const RELOAD_MAX_TRIES: u32 = 3;
+
+/// 各窗口"连续重载且仍未 ack"的计数（按 label）。收到该 label 的 ack 即清零。
+#[cfg(windows)]
+static MAIN_RELOAD_TRIES: AtomicU32 = AtomicU32::new(0);
+#[cfg(windows)]
+static MINI_RELOAD_TRIES: AtomicU32 = AtomicU32::new(0);
+/// 各窗口是否已因超过重载上限而放弃（保证 `reload_giveup` 诊断只写一次）。
+#[cfg(windows)]
+static MAIN_RELOAD_GAVEUP: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static MINI_RELOAD_GAVEUP: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
+fn reload_tries(label: &str) -> &'static AtomicU32 {
+    if label == "mini" { &MINI_RELOAD_TRIES } else { &MAIN_RELOAD_TRIES }
+}
+
+#[cfg(windows)]
+fn reload_gaveup_flag(label: &str) -> &'static AtomicBool {
+    if label == "mini" { &MINI_RELOAD_GAVEUP } else { &MAIN_RELOAD_GAVEUP }
+}
+
+/// 追加一行到 mini-diag.log（自愈相关的一次性事件记录）。
+#[cfg(windows)]
+fn diag_line(line: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(settings::config_path().with_file_name("mini-diag.log"))
+    {
+        let _ = writeln!(f, "{}", line);
+    }
+}
+
 /// WebView2 假死自愈：窗口正在显示且前端 ack 超时 → reload 该窗口前端（按 label 节流）。
+/// 为防"重载也救不回来"时无限重载闪烁，对每个 label 限制连续重载次数（`RELOAD_MAX_TRIES`）；
+/// 超过即放弃并写一行 `reload_giveup` 诊断 —— 一旦该 label 重新 ack，计数与放弃标志都清零。
 #[cfg(windows)]
 fn maybe_reload_stale(app: &AppHandle, label: &str, enabled: bool, stale_secs: u64, throttle_secs: u64, last: &AtomicU64) {
     if !enabled {
@@ -1340,8 +1388,18 @@ fn maybe_reload_stale(app: &AppHandle, label: &str, enabled: bool, stale_secs: u
     if !w.is_visible().unwrap_or(false) {
         return;
     }
+    // 从未 ack（启动初期宽限，防误伤）或尚未超时 → 不动，也不计入重载次数
     let age = ack_age_secs(label);
     if age < 0 || (age as u64) <= stale_secs {
+        return;
+    }
+    // 连续重载已达上限仍无 ack：判定永久假死，停止重载（避免无限闪烁），只记一次诊断
+    let tries = reload_tries(label);
+    if tries.load(Ordering::Relaxed) >= RELOAD_MAX_TRIES {
+        let gv = reload_gaveup_flag(label);
+        if !gv.swap(true, Ordering::Relaxed) {
+            diag_line(&format!("reload_giveup label={} tries={}", label, tries.load(Ordering::Relaxed)));
+        }
         return;
     }
     let now = now_secs();
@@ -1349,6 +1407,7 @@ fn maybe_reload_stale(app: &AppHandle, label: &str, enabled: bool, stale_secs: u
         return;
     }
     last.store(now, Ordering::Relaxed);
+    tries.fetch_add(1, Ordering::Relaxed);
     let _ = w.eval("location.reload()");
 }
 
