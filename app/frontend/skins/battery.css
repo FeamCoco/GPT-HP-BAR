@@ -10,7 +10,7 @@
 .sk-battery .battery{position:relative;width:58px;height:27px;border:2.5px solid #aeb6c6;border-radius:7px;flex:none;padding:3px}
 .sk-battery .battery::after{content:"";position:absolute;right:-8px;top:7px;width:5px;height:9px;border-radius:0 3px 3px 0;background:#aeb6c6}
 .sk-battery .battery i{display:block;height:100%;width:0%;border-radius:2.5px;
-  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));box-shadow:0 0 10px -2px var(--tone-b);transition:width .35s ease}
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));box-shadow:0 0 10px -2px var(--tone-b)}
 .sk-battery .num{font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:27px;font-weight:700;line-height:1;color:var(--tone-a)}
 .sk-battery .lab{font-size:10.5px;color:#8b93a5;margin-top:3px;letter-spacing:.5px}
 .sk-battery .sub{display:flex;justify-content:space-between;width:100%;border-top:1px solid rgba(255,255,255,.08);padding-top:8px;font-size:11px;color:#8b93a5}
@@ -30,7 +30,7 @@
   box-shadow:0 4px 16px rgba(0,0,0,.4);font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:12.5px}
 .sk-battery-mini .m-batt{position:relative;width:26px;height:13px;border:1.5px solid rgba(160,170,190,.9);border-radius:3.5px;flex:none;padding:1.5px}
 .sk-battery-mini .m-batt::after{content:"";position:absolute;right:-4.5px;top:3px;width:2.5px;height:5px;border-radius:0 2px 2px 0;background:rgba(160,170,190,.9)}
-.sk-battery-mini .m-batt i{display:block;height:100%;width:0%;background:var(--tone-b);border-radius:1px;transition:width .35s ease}
+.sk-battery-mini .m-batt i{display:block;height:100%;width:0%;background:var(--tone-b);border-radius:1px}
 
 
 /* ============================================================================
@@ -44,9 +44,13 @@
   transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
 .sk-battery .battery{border-color:#c3cad8}
 .sk-battery .battery::after{background:#c3cad8}
-/* §5.2 填充条过渡曲线统一 */
-.sk-battery .battery i,.sk-battery-mini .m-batt i{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §5.2 填充条补间：v0.6 起改由 JS 逐帧驱动（HP.tween），CSS 侧 transition 已移除 */
 /* §5.3 告警：填充条从"整块透明度闪烁"改成"亮度呼吸" */
 .sk-battery.danger .battery i{animation:hp-breathe-fill 1.6s ease-in-out infinite}
 /* §4 挂件形态同步换色 */
 .sk-battery-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}
+
+/* ---- 紧凑形态：电池 + 大数字一行，副行（5h/重置/周）与邮箱收起 ----
+   sub/hp-mail 的 display 由 JS 写 inline style，必须 !important */
+body.compact .sk-battery .sub{display:none!important}
+body.compact .sk-battery .hp-mail{display:none!important}

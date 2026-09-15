@@ -28,8 +28,9 @@ body{font-family:var(--f-ui);font-size:13px;color:#e8ecf4;display:flex;align-ite
   transition:opacity .18s ease,color .18s ease,background .18s ease,
     border-color .18s ease,box-shadow .18s ease}
 .tgl::before{content:"";position:absolute;inset:-4px;border-radius:inherit}  /* R3 命中区 28px */
-/* 图标 11 -> 12px，小尺寸下辨识度明显变好 */
-.tgl svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+/* 图标 11 -> 12px，小尺寸下辨识度明显变好；旋转走与窗口补间同一时钟（见 app.js RESIZE_MS） */
+.tgl svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;
+  transition:transform 240ms cubic-bezier(.215,.61,.355,1)}
 .hp-chrome:hover .tgl{opacity:1}                            /* R1 整组一起亮，避免"只亮一个"的跳动 */
 .tgl:hover{color:var(--ink-1,#e8ecf4);background:var(--surface-hi,rgba(255,255,255,.12));
   border-color:rgba(255,255,255,.28)}
@@ -46,7 +47,10 @@ body.compact #tgl svg{transform:rotate(180deg)}
 .sk-battery,.sk-gauge,.sk-neon,.sk-liquid,.sk-pixel{
   --ink-1:#e8ecf4;--ink-2:#9aa3b5;--ink-3:#6b7488;
   --surface:rgba(255,255,255,.06);--surface-hi:rgba(255,255,255,.12);
-  --line:rgba(255,255,255,.10);--key:#3b82f6}
+  --line:rgba(255,255,255,.10);--key:#3b82f6;
+  /* 等宽数字：数值补间过程中文本宽度保持稳定，不会"数字一动、整行跟着挪"
+     （30px 的大数字从 100% 数到 8% 会少一位，比例数字下整行都会左右滑） */
+  font-variant-numeric:tabular-nums}
 
 /* ---- §5.1 状态色可插值：用 @property 把两个 token 注册成 <color>，
    浏览器才会对它们做过渡（跨档时宽度与颜色同步走，不再"宽度慢慢走、颜色啪一下换"） */
@@ -55,10 +59,14 @@ body.compact #tgl svg{transform:rotate(180deg)}
 
 /* ---- §5.4 换肤入场：mountSkin() 是 root.innerHTML 直替，
    旧皮肤瞬间消失、新皮肤瞬间出现（没有属性变化可过渡），所以给根元素挂一次性入场动画，
-   新元素每次挂载都会重放。 */
+   新元素每次挂载都会重放。
+   ⚠ 这里**只能**声明 animation：原来还带了一条 `transition:opacity .2s ease`，
+   而 `#root > *`（优先级 1,0,0）盖得住皮肤的 `.sk-card`（0,1,0），
+   把皮肤在根元素上声明的几何过渡（width/padding 240ms）整条吃掉了 ——
+   收起时卡片宽度瞬间跳变、窗口却还要 240ms 才收到位，这正是"四周都在抖"的来源之一。
+   元素的 opacity 过渡由 app.js 的 ANIM_TRANS 负责，不需要在这里兜底。 */
 @keyframes hp-skin-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
-#root > *{transition:opacity .2s ease;
-  animation:hp-skin-in .22s cubic-bezier(.22,1,.36,1) both}
+#root > *{animation:hp-skin-in .22s cubic-bezier(.22,1,.36,1) both}
 /* 透明度设置：原来 root.style.opacity 直接赋值，补一条过渡避免拖滑块时硬跳 */
 #root{transition:opacity .2s ease}
 

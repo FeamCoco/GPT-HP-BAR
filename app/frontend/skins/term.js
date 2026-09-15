@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['term'] = {
   name: '③ 终端 Term',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [340, 150], compact: null },
+  sizes: { full: [340, 150], compact: [340, 94] },
 
   html: `
     <div class="sk-term">
@@ -26,17 +26,25 @@ window.SKINS['term'] = {
     el.classList.toggle('danger', danger && rem5 != null && rem5 <= 20);
     el.classList.toggle('nodata', !ok);
 
-    // 10 格 █░ 进度块：filled = round(剩余%/10)
-    const blocks = (rem) => {
+    // 10 格 █░ 是"离散"语言，不做平滑插值：用阶梯缓动让数值一格一格跳，
+    // 方块与右侧百分比同步走 —— 这就是 htop 刷新时血槽逐格熄灭的那一下。
+    // _hpFill 记当前格数，同一格不重写 innerHTML（省掉每帧的字符串重建）。
+    const blocks = (node, rem) => {
       const filled = rem == null ? 0 : Math.max(0, Math.min(10, Math.round(rem / 10)));
-      return '<span class="on">' + '█'.repeat(filled) + '</span><span class="off">' + '░'.repeat(10 - filled) + '</span>';
+      if (node._hpFill === filled) return;
+      node._hpFill = filled;
+      node.innerHTML = '<span class="on">' + '█'.repeat(filled) + '</span>' +
+        '<span class="off">' + '░'.repeat(10 - filled) + '</span>';
     };
-    q('.b5').innerHTML = blocks(rem5);
-    q('.n5').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
-    if (s.show_week !== false) {
-      q('.bwk').innerHTML = blocks(remw);
-      q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
-    }
+    const b5 = q('.b5'), n5 = q('.n5');
+    HP.tween(el, 't5', rem5, (v) => {
+      blocks(b5, v);
+      n5.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeStep(5), start: () => HP.fx(n5, 'jitter') });
+    HP.tween(el, 'tw', s.show_week === false ? null : remw, (v) => {
+      blocks(q('.bwk'), v);
+      q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeStep(5) });
 
     // 标题行 plan / 尾行 开关（reset · credits · 无数据源），分隔符随两侧显隐
     q('.plan').textContent = ok ? String(u.plan || '--').toLowerCase() : '--';
@@ -58,6 +66,9 @@ window.SKINS['term'] = {
     const rem = ok ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
     el.classList.toggle('nodata', rem == null);
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const n = el.querySelector('.m-num');
+    HP.tween(el, 'm', rem, (v) => {
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeStep(4), start: () => HP.fx(n, 'jitter') });
   },
 };

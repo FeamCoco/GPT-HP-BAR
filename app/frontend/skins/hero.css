@@ -15,7 +15,7 @@
 .sk-hero .track{position:relative;height:11px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden;margin-top:7px}
 .sk-hero .b5{display:block;height:100%;width:0%;border-radius:99px;
   background:linear-gradient(90deg,var(--tone-a),var(--tone-b));
-  box-shadow:0 0 14px -1px var(--tone-b);transition:width .35s ease}
+  box-shadow:0 0 14px -1px var(--tone-b)}
 .sk-hero .ticks{position:absolute;inset:0;pointer-events:none;
   background:repeating-linear-gradient(90deg,transparent 0,transparent calc(10% - 2px),rgba(8,10,14,.75) calc(10% - 2px),rgba(8,10,14,.75) 10%)}
 .sk-hero .sub{display:flex;justify-content:space-between;margin-top:8px;font-size:11.5px;color:#8b93a5}
@@ -34,7 +34,7 @@
   box-shadow:0 4px 16px rgba(0,0,0,.4);font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:12.5px}
 .sk-hero-mini .m-track{position:relative;width:44px;height:9px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
 .sk-hero-mini .m-fill{display:block;height:100%;width:0%;border-radius:99px;
-  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));transition:width .35s ease}
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b))}
 .sk-hero-mini .m-ticks{position:absolute;inset:0;pointer-events:none;
   background:repeating-linear-gradient(90deg,transparent 0,transparent calc(20% - 1.5px),rgba(8,10,14,.75) calc(20% - 1.5px),rgba(8,10,14,.75) 20%)}
 .sk-hero-mini.nodata .m-fill{background:#6b7488}
@@ -50,10 +50,15 @@
   background:linear-gradient(160deg,rgba(16,20,38,.88),rgba(9,12,24,.90));
   transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
 .sk-hero .track{background:rgba(255,255,255,.08)}
-/* §5.2 血槽过渡曲线统一 */
-.sk-hero .b5,.sk-hero-mini .m-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §5.2 血槽补间：v0.6 起改由 JS 逐帧驱动（HP.tween + HP.easeSoft），CSS 侧的
+   `transition:width` 已移除，避免与 JS 补间叠成两层缓动（数字先到、条还在爬） */
 /* §5.3 告警：血槽从"整块透明度闪烁"改成"亮度呼吸"，与数字的发光呼吸同频
    （数字 .n5 上的 .danger-flash 由 app.css 全局接管） */
 .sk-hero.danger .b5{animation:hp-breathe-fill 1.6s ease-in-out infinite}
 /* §4 挂件形态同步换色 */
 .sk-hero-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}
+
+/* ---- 紧凑形态（外壳往 body 加 .compact）：只留标题行 + 大数字 + 血槽 ----
+   这些行的 display 由 JS 按设置写 inline style，必须 !important 才压得住 */
+body.compact .sk-hero .sub{display:none!important}
+body.compact .sk-hero .hp-mail{display:none!important}

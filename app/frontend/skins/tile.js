@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['tile'] = {
   name: '⑤ 磁贴 Tile',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [128, 150], compact: null },
+  sizes: { full: [128, 150], compact: [128, 120] },
 
   html: `
     <div class="sk-tile">
@@ -32,8 +32,13 @@ window.SKINS['tile'] = {
     HP.applyTone(el, rem, s.accent);
     el.classList.toggle('nodata', !ok);
 
-    q('.nv').textContent = rem == null ? '--' : String(Math.round(rem));
-    q('.fill').style.width = (rem == null ? 0 : rem) + '%';
+    // Fluent 的语言是"抬起-回弹"：进度线用 easeBack 轻微过冲一下再落定，
+    // 数字抬起 3px 落回（动效挂在 .num 上 —— .nv 是行内元素，transform 对它无效）
+    const fill = q('.fill'), num = q('.num');
+    HP.tween(el, 't5', rem, (v) => {
+      fill.style.width = (v == null ? 0 : v) + '%';
+      q('.nv').textContent = v == null ? '--' : String(Math.round(v));
+    }, { ease: HP.easeBack, start: () => HP.fx(num, 'lift') });
     const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
     q('.cdv').textContent = cdVal ?? '--';
     // 倒计时行可关（磁贴 sub 行仅承载重置倒计时），无数据时同样隐藏
@@ -49,7 +54,10 @@ window.SKINS['tile'] = {
     const ok = !!u.ok;
     const rem = ok ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
-    el.querySelector('.m-fill').style.width = (rem == null ? 0 : rem) + '%';
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const f = el.querySelector('.m-fill'), n = el.querySelector('.m-num');
+    HP.tween(el, 'm', rem, (v) => {
+      f.style.width = (v == null ? 0 : v) + '%';
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeBack, start: () => HP.fx(n, 'tick') });
   },
 };

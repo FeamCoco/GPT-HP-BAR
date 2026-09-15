@@ -15,9 +15,24 @@ html,body{margin:0;padding:0;background:transparent;overflow:hidden;height:100%;
 @property --tone-a{syntax:'<color>';inherits:true;initial-value:#6ee7b7}
 @property --tone-b{syntax:'<color>';inherits:true;initial-value:#10b981}
 
+/* §5.1 状态色可插值（挂件）——@property 只是把 token 注册成「可插值类型」，
+   真正插值还需要一条 transition。主形态的 transition 写在各皮肤 CSS 的 .sk-* 上，
+   而挂件根元素是 .sk-*-mini（不命中主形态选择器），所以这里补一条等价的。
+   只过渡颜色 token，不碰任何几何量（width/height/stroke-dasharray/transform），
+   硬规则 1 仍然成立；时长与曲线和主形态一致（.5s cubic-bezier(.22,1,.36,1)）。 */
+.sk-hero-mini,.sk-glass-mini,.sk-term-mini,.sk-card-mini,.sk-tile-mini,
+.sk-battery-mini,.sk-gauge-mini,.sk-neon-mini,.sk-liquid-mini,.sk-pixel-mini{
+  transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
+
 @keyframes hp-skin-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 /* 入场只用 transform/opacity，不影响 offsetWidth/offsetHeight，落位测量照旧准确 */
 #root > *{animation:hp-skin-in .22s cubic-bezier(.22,1,.36,1) both}
+
+/* 挂件数字的栏位固定：数值补间时文本会在 "100%" / "8%" / "--%" 之间变宽变窄，
+   而挂件窗口尺寸只在挂载时量一次（见 mini.js syncSize）—— 固定 4ch + 等宽数字 +
+   右对齐，数字长度变化就不会把整行推来推去，也不会把窗口内容挤出边界。
+   4ch 是按最大三位数 + "%" 预留的（tabular 数字下每位正好 1ch）。 */
+.m-num{font-variant-numeric:tabular-nums;min-width:4ch;text-align:right}
 
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>GPT-HP-BAR · 进度与数字动效预览（十套皮肤）</title>
+<!-- 运行时 CSS 必须放在外壳 CSS **前面**：两边同权重时后加载的赢，
+     而 app.css 里写着 html,body{overflow:hidden;height:100%} 之类要被我覆盖掉。 -->
+<style>
+/* ===================== 以下是运行时前端原样内联 ===================== */
+/* @@SKIN_CSS@@ */
+</style>
+<style>
+  /* ---------------------------------------------------------------------
+     预览外壳。这一整页是**自包含**的：运行时的 app.css + 十套 skin css +
+     i18n/common/十套 skin js 全部由 anim-preview.build.cjs 内联进来。
+     为什么必须内联：预览面板是从 /static-html/<hash>/ 下服务的，
+     原来写的 `../app/frontend/...` 相对路径全部 404 -> 一个样式/脚本都加载不上。
+     内联后这个文件既能被面板预览，也能直接双击用浏览器打开。
+     --------------------------------------------------------------------- */
+  html,body{overflow:auto!important;height:auto!important;display:block!important;
+    background:#0a0d13;color:#e8ecf4;user-select:auto!important;min-height:100%;margin:0}
+  body{font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
+    font-size:13px;padding:20px 24px 56px}
+  h1{font-size:17px;font-weight:600;letter-spacing:.3px;margin:0}
+  h1 small{font-weight:400;font-size:11.5px;color:#7c879a;margin-left:10px}
+  .pv-note{margin:8px 0 14px;font-size:11.5px;line-height:1.75;color:#8b95a8;
+    border-left:2px solid #3b82f6;padding-left:10px;max-width:960px}
+  .pv-note b{color:#c8d2e2;font-weight:600}
+  code{font-family:Consolas,"Cascadia Mono",monospace;font-size:11px;
+    background:rgba(255,255,255,.07);padding:1px 5px;border-radius:4px;color:#a5b6cd}
+
+  /* 自检条：万一哪一环没起来，这里会直接说出来，不用猜 */
+  .pv-status{display:flex;flex-wrap:wrap;gap:7px 18px;align-items:center;
+    margin-bottom:14px;padding:9px 13px;border-radius:10px;font-size:11.5px;
+    background:rgba(16,21,31,.9);border:1px solid rgba(255,255,255,.1)}
+  .pv-status i{font-style:normal;color:#7c879a}
+  .pv-status b{font-family:var(--f-num,Bahnschrift,sans-serif);font-variant-numeric:tabular-nums}
+  .pv-status .ok{color:#4ade80}
+  .pv-status .bad{color:#f87171}
+  .pv-err{display:none;margin-bottom:12px;padding:9px 13px;border-radius:10px;font-size:11.5px;
+    background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#fca5a5;
+    white-space:pre-wrap;word-break:break-all}
+
+  /* ---- 控制条 ---- */
+  .pv-ctl{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:9px;align-items:center;
+    padding:11px 13px;margin-bottom:16px;border-radius:12px;
+    background:rgba(16,21,31,.95);border:1px solid rgba(255,255,255,.1);
+    backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.45)}
+  .pv-ctl input[type=range]{width:240px;accent-color:#3b82f6}
+  .pv-ctl label{display:inline-flex;gap:6px;align-items:center;font-size:11.5px;color:#9aa5b8;
+    white-space:nowrap;cursor:pointer}
+  .pv-ctl button{font:inherit;font-size:11.5px;color:#c8d2e2;cursor:pointer;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);
+    border-radius:8px;padding:5px 11px;transition:background .15s,color .15s,border-color .15s}
+  .pv-ctl button:hover{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.26)}
+  .pv-val{font-family:var(--f-num,Bahnschrift,sans-serif);font-size:16px;font-weight:700;
+    color:#7dd3fc;min-width:62px;text-align:right;font-variant-numeric:tabular-nums}
+  .pv-ctl .pv-sep{width:1px;height:20px;background:rgba(255,255,255,.12)}
+
+  /* ---- 十套皮肤 ---- */
+  .pv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px}
+  .pv-cell{border-radius:12px;background:rgba(255,255,255,.028);
+    border:1px solid rgba(255,255,255,.075);padding:12px 14px 14px}
+  .pv-lab{display:flex;align-items:baseline;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .pv-lab b{font-size:12.5px;font-weight:600;color:#dbe3ee}
+  .pv-lab em{font-style:normal;font-size:10px;color:#8ea2bd;background:rgba(59,130,246,.14);
+    border:1px solid rgba(59,130,246,.3);border-radius:999px;padding:1.5px 8px}
+  /* 舞台：给皮肤一个"桌面"质感，深色渐变，方便看清发光/血色/像素边 */
+  .pv-stage{position:relative;display:flex;align-items:center;justify-content:center;
+    min-height:132px;padding:14px 10px;border-radius:10px;
+    background:radial-gradient(120% 120% at 20% 0%,#1b2431 0%,#0d1119 60%,#090b11 100%)}
+  .pv-minirow{display:flex;align-items:center;gap:10px;margin-top:9px;padding-top:9px;
+    border-top:1px dashed rgba(255,255,255,.1)}
+  .pv-minirow>span{font-size:9.5px;letter-spacing:.6px;color:#66718a;flex:none}
+  .pv-minirow .pv-mini-stage{display:flex;align-items:center;justify-content:center;
+    padding:9px 14px;border-radius:9px;background:#11151d;
+    background-image:linear-gradient(0deg,#1a5fb4 0 8px,#11151d 8px)}
+  body.pv-hide-mini .pv-minirow{display:none}
+</style>
+</head>
+<body>
+  <h1>进度与数字动效预览<small>十套皮肤 · 每套一条自己的动效语言</small></h1>
+
+  <div class="pv-status" id="pv-status">
+    <span><i>补间引擎</i> <b id="st-engine">—</b></span>
+    <span><i>已挂载</i> <b id="st-cells">—</b></span>
+    <span><i>渲染次数</i> <b id="st-paints">0</b></span>
+    <span><i>最近变化</i> <b id="st-last">—</b></span>
+    <span><i>动效签名</i> <b id="st-fx">0</b></span>
+  </div>
+  <div class="pv-err" id="pv-err"></div>
+
+  <div class="pv-note">
+    <b>打开即自动轮播</b>（不必点任何东西）。这是动效验证页，不是布局预览：按钮组没有注入，
+    每套皮肤右上角会空出一段（真机上那里停着两个 20px 按钮）。
+    数值补间由 <code>HP.tween</code> 逐帧驱动，条 / 液面 / 弧长 / 指针 / 数字共用一个 620ms 时钟；
+    变化瞬间再叠一层 <code>HP.fx</code> 的一次性动效 —— 拖滑杆看大跳变，按「+1%」看小变化：
+    <b>后者才是实际使用中最常发生的情况</b>（一次轮询通常只动 1%）。
+  </div>
+
+  <div class="pv-ctl">
+    <label>剩余额度 <input id="pv-range" type="range" min="0" max="100" step="1" value="73"></label>
+    <span class="pv-val" id="pv-val">73%</span>
+    <span class="pv-sep"></span>
+    <button data-set="-1">−1%（小变化）</button>
+    <button data-set="+1">+1%（小变化）</button>
+    <button data-set="+27">+27%（大跳变）</button>
+    <button data-set="8">→ 8%（告急红）</button>
+    <button data-set="15">→ 15%（告急红）</button>
+    <button data-set="100">→ 100%（满）</button>
+    <button data-set="0">→ 0%（空）</button>
+    <button data-set="null">无数据源</button>
+    <span class="pv-sep"></span>
+    <label><input id="pv-auto" type="checkbox" checked> 自动轮播</label>
+    <label><input id="pv-mini" type="checkbox" checked> 显示挂件形态</label>
+  </div>
+
+  <div class="pv-grid" id="pv-grid"></div>
+
+<script>
+/* ===================== 运行时前端原样内联 ===================== */
+/* @@RUNTIME_JS@@ */
+</script>
+<script>
+(() => {
+  /* 先把任何报错显示到页面上：以后"没动效"能直接看到原因，不用猜 */
+  const errBox = document.getElementById('pv-err');
+  const showErr = (msg) => {
+    errBox.style.display = 'block';
+    errBox.textContent += (errBox.textContent ? '\n' : '') + msg;
+  };
+  if (window.addEventListener) {
+    window.addEventListener('error', (e) => {
+      showErr('[error] ' + (e.message || e.type) + (e.filename ? ' @ ' + e.filename + ':' + e.lineno : ''));
+    });
+  }
+
+  const $ = (s) => document.querySelector(s);
+  const setStatus = (id, text, cls) => {
+    const n = $('#' + id);
+    if (!n) return;
+    n.textContent = text;
+    n.className = cls || '';
+  };
+
+  if (!window.HP || typeof window.HP.tween !== 'function') {
+    setStatus('st-engine', '未加载 HP.tween', 'bad');
+    showErr('[fatal] 运行时前端没有内联进来（HP.tween 不存在），请重新执行 design/anim-preview.build.cjs');
+    return;
+  }
+  setStatus('st-engine', 'HP.tween ✓', 'ok');
+  setStatus('st-fx', Object.keys(HP.FX).length + ' 个');
+
+  HP.setLang('zh');
+
+  // 与 app.js 的 appSettings 同构：皮肤 update() 直接吃这个对象
+  const SETTINGS = { skin: 'card', accent: 'auto', lang: 'zh', font_scale: 100, opacity: 96,
+    show_week: true, show_credits: true, show_countdown: true, show_email: true, poll_secs: 60 };
+
+  // 每套皮肤的动效签名 —— 这张表就是"每主题各设计一套"的成果清单
+  const MOTION = {
+    hero:    '血槽 easeSoft · 数字弹跳 pop',
+    glass:   '数字上滑 slide · 闪电抽动 pop',
+    term:    '10 格逐格跳（阶梯）· 数字抖动 jitter',
+    card:    '条 + 数字同补间 · 数字 tick（最克制）',
+    tile:    '进度线 easeBack 回弹 · 数字抬起 lift',
+    battery: '填充条平滑 · 数字亮度脉冲 charge',
+    gauge:   '弧线 easeOut · 指针 easeBack 过冲 · 数字 pop',
+    neon:    '扫光条亮度闪 charge · 数字抖动 jitter',
+    liquid:  '液面 easeSoft · 数字随液面晃动 bob',
+    pixel:   '心 / 方块逐格硬切 · 数字闪两下 blip',
+  };
+  const ORDER = ['hero', 'glass', 'term', 'card', 'tile', 'battery', 'gauge', 'neon', 'liquid', 'pixel'];
+
+  // 剩余 rem% -> 与 Rust 侧 usage 同构的载荷（HP.rem(used) = 100 - used）
+  function payload(rem) {
+    if (rem == null) return { ok: false, source: 'none', error: 'preview: no data source' };
+    const u = (r) => ({ used_percent: Math.max(0, Math.min(100, 100 - r)) });
+    return {
+      ok: true, source: 'preview', plan: 'plus', email: 'demo.user@example.com',
+      credits: { unlimited: false, balance: 12.4 },
+      primary: Object.assign(u(rem), { window_minutes: 300, resets_in_seconds: 3 * 3600 + 54 * 60 }),
+      secondary: Object.assign(u(rem * 0.82 + 4), { window_minutes: 10080, resets_in_seconds: 2 * 86400 + 5 * 3600 }),
+    };
+  }
+
+  const grid = document.getElementById('pv-grid');
+  const cells = [];
+
+  for (const id of ORDER) {
+    const sk = window.SKINS[id];
+    if (!sk) { showErr('[warn] 缺少皮肤 ' + id); continue; }
+
+    const cell = document.createElement('div');
+    cell.className = 'pv-cell';
+    cell.innerHTML =
+      '<div class="pv-lab"><b>' + sk.name + '</b><em>' + (MOTION[id] || '') + '</em></div>' +
+      '<div class="pv-stage"></div>' +
+      '<div class="pv-minirow"><span>挂件</span><div class="pv-mini-stage"></div></div>';
+    const stage = cell.querySelector('.pv-stage');
+    const miniStage = cell.querySelector('.pv-mini-stage');
+    try {
+      stage.innerHTML = HP.i(sk.html);
+      miniStage.innerHTML = HP.i(sk.mini);
+    } catch (e) {
+      showErr('[warn] ' + id + ' 模板挂载失败: ' + e.message);
+      continue;
+    }
+    grid.appendChild(cell);
+    cells.push({ id, sk, mainEl: stage.firstElementChild, miniEl: miniStage.firstElementChild });
+  }
+  setStatus('st-cells', cells.length + ' 套', cells.length === ORDER.length ? 'ok' : 'bad');
+
+  const range = document.getElementById('pv-range');
+  const valEl = document.getElementById('pv-val');
+  let current = 73;
+  let paints = 0;
+
+  function paint(rem, why) {
+    const u = payload(rem);
+    let bad = 0;
+    for (const c of cells) {
+      try { c.sk.update(c.mainEl, u, SETTINGS); } catch (e) { bad++; showErr('[warn] ' + c.id + '.update: ' + e.message); }
+      try { c.sk.updateMini(c.miniEl, u, SETTINGS); } catch (e) { bad++; showErr('[warn] ' + c.id + '.updateMini: ' + e.message); }
+    }
+    paints++;
+    setStatus('st-paints', String(paints), bad ? 'bad' : '');
+    setStatus('st-last', (why || '') + (rem == null ? ' → 无数据' : ' → ' + rem + '%'), 'ok');
+
+    valEl.textContent = rem == null ? '—' : rem + '%';
+    if (rem == null) { valEl.style.color = '#8b95a8'; }
+    else {
+      range.value = rem;
+      valEl.style.color = rem <= 20 ? '#f87171' : (rem <= 50 ? '#fbbf24' : '#7dd3fc');
+    }
+  }
+
+  /// 首帧：先"直接就位"（不动画），十套皮肤都落在 73% 的基准上；
+  /// 之后每一次交互才是有起点、有终点的补间。
+  paint(73, '首次就位');
+
+  range.addEventListener('input', () => { current = Number(range.value); paint(current, '滑杆'); });
+
+  document.querySelectorAll('.pv-ctl button').forEach((b) => {
+    b.addEventListener('click', () => {
+      const spec = b.dataset.set;
+      if (spec === 'null') current = null;
+      else if (spec[0] === '+' || spec[0] === '-') {
+        const base = current == null ? 50 : current;
+        const next = Math.max(0, Math.min(100, base + Number(spec)));
+        paint(next, spec + '%');
+        current = next;
+        return;
+      } else current = Number(spec);
+      paint(current, b.textContent.trim());
+    });
+  });
+
+  /* ---- 自动轮播：默认就开着，打开页面不用点任何东西也看得到动效 ----
+     七成概率是小变化（模拟真实轮询：通常只动 1%），三成来一次大跳，
+     两种都看得到 —— 小变化正是这套引擎真正要解决的问题。 */
+  const clamp = (v) => Math.max(0, Math.min(100, v));
+  let timer = 0;
+  let tick = 0;
+
+  function loop() {
+    tick++;
+    const base = current == null ? 60 : current;
+    current = (tick % 3 === 0) ? clamp(Math.round(Math.random() * 100))
+                              : clamp(base + (Math.random() < 0.5 ? -1 : 1));
+    paint(current, tick % 3 === 0 ? '大跳变' : '小变化 ±1%');
+  }
+
+  const autoBox = document.getElementById('pv-auto');
+  function applyAuto(on) {
+    clearInterval(timer);
+    timer = on ? setInterval(loop, 2400) : 0;
+  }
+  autoBox.addEventListener('change', (e) => applyAuto(e.target.checked));
+  // 默认直接开（不去读 checkbox 的初始值：个别环境不反射 DOM 属性，
+  // 读成 false 就会"打开页面什么都不动"，正是这次踩到的坑）
+  autoBox.checked = true;
+  applyAuto(true);
+
+  // 开场先来一跳：73% -> 41% 的大幅补间，落地就能看见条/液面/弧线一起走
+  setTimeout(() => { current = 41; paint(current, '开场演示'); }, 900);
+
+  document.getElementById('pv-mini').addEventListener('change', (e) => {
+    document.body.classList.toggle('pv-hide-mini', !e.target.checked);
+  });
+})();
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['glass'] = {
   name: '② 琉璃 Glass',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [376, 80], compact: null },
+  sizes: { full: [376, 80], compact: [206, 60] },
 
   html: `
     <div class="sk-glass">
@@ -30,13 +30,18 @@ window.SKINS['glass'] = {
     const danger = HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('danger', danger && rem5 != null && rem5 <= 20);
     el.classList.toggle('nodata', !ok);
+    const n5 = q('.n5');
 
-    q('.n5').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
+    // 琉璃没有进度条，数值全靠这一个数字承载：新值"浮"上来（slide），
+    // 闪电同时抽一下 —— 胶囊皮肤量感轻，动效也要轻，不做位移之外的强调
+    HP.tween(el, 'g5', rem5, (v) => {
+      n5.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { start: () => { HP.fx(n5, 'slide'); HP.fx(el.querySelector('.bolt'), 'pop'); } });
     const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
     q('.cdv').textContent = cdVal ?? '--';
-    if (s.show_week !== false) {
-      q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
-    }
+    HP.tween(el, 'gw', s.show_week === false ? null : remw, (v) => {
+      q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
+    });
 
     // 开关：倒计时 / 周；分隔线随两侧内容显隐
     const cdOn = s.show_countdown !== false && cdVal != null;
@@ -53,6 +58,9 @@ window.SKINS['glass'] = {
     const rem = ok ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
     el.classList.toggle('nodata', rem == null);
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const n = el.querySelector('.m-num');
+    HP.tween(el, 'm', rem, (v) => {
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { start: () => HP.fx(n, 'tick') });
   },
 };

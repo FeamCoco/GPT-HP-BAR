@@ -40,13 +40,19 @@ window.SKINS['card'] = {
     const cd = q('.cd');
     if (cd) cd.style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
 
-    q('.b5').style.width = (rem5 == null ? 0 : rem5) + '%';
-    q('.n5').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
-    q('.n5').classList.toggle('danger-flash', rem5 != null && rem5 <= 20);
-    if (s.show_week !== false) {
-      q('.bwk').style.width = (remw == null ? 0 : remw) + '%';
-      q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
-    }
+    // 简报卡是十套里最克制的一档（业务阅读场景，动效不该抢戏）：
+    // 条与数字共用补间，数字只叠一次极短的明度下探（tick），既提示"刷新过"
+    // 又不会让人在读数字时觉得字在跳
+    const b5 = q('.b5'), n5 = q('.n5');
+    HP.tween(el, 'c5', rem5, (v) => {
+      b5.style.width = (v == null ? 0 : v) + '%';
+      n5.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { start: () => HP.fx(n5, 'tick') });
+    n5.classList.toggle('danger-flash', rem5 != null && rem5 <= 20);
+    HP.tween(el, 'cw', s.show_week === false ? null : remw, (v) => {
+      q('.bwk').style.width = (v == null ? 0 : v) + '%';
+      q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
+    });
     q('.hp-plan').textContent = (u.plan || '--').toUpperCase();
     const m = q('.hp-mail'); m.textContent = HP.mail(u.email); m.title = u.email || '';
     if (s.show_email === false) m.style.display = 'none'; else m.style.display = '';
@@ -62,7 +68,10 @@ window.SKINS['card'] = {
     const ok = !!u.ok;
     const rem = ok ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
-    el.querySelector('.m-fill').style.width = (rem == null ? 0 : rem) + '%';
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const f = el.querySelector('.m-fill'), n = el.querySelector('.m-num');
+    HP.tween(el, 'm', rem, (v) => {
+      f.style.width = (v == null ? 0 : v) + '%';
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { start: () => HP.fx(n, 'tick') });
   },
 };

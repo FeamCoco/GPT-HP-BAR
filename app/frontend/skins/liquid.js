@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['liquid'] = {
   name: '⑨ 液体 Liquid',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [240, 220], compact: null },
+  sizes: { full: [240, 220], compact: [240, 128] },
 
   html: `
     <div class="liquid sk-liquid">
@@ -38,12 +38,18 @@ window.SKINS['liquid'] = {
     HP.applyTone(el, rem5, s.accent); // 液体/波浪随三档色变化，≤20% 自动泛红
     el.classList.toggle('nodata', !ok);
 
-    const water = q('.l-water');
-    if (rem5 == null || rem5 <= 0) water.style.display = 'none';
-    else { water.style.display = ''; water.style.height = rem5 + '%'; }
-
-    q('.l-num').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
-    q('.l-rem').textContent = this.remainTxt(ok && u.primary ? u.primary.window_minutes : null, rem5);
+    // 液面高度、中央数字、底部"还够用多久"共用同一个补间值 —— 三者不会各说各话
+    // （原来 remainTxt 吃的是目标值，会出现"数字还在 60%、时长已经按 45% 算"的错位）。
+    // 液面用 easeSoft 稳稳升起（液体的体量感），数字叠一记 bob：先随液面下沉再浮起，
+    // 有阻尼感，像水面晃了一下 —— 这是液体皮肤唯一合理的动效语言。
+    const water = q('.l-water'), num = q('.l-num'), remTxt = q('.l-rem');
+    const mins = ok && u.primary ? u.primary.window_minutes : null;
+    HP.tween(el, 'l5', rem5, (v) => {
+      if (v == null || v <= 0.5) water.style.display = 'none';
+      else { water.style.display = ''; water.style.height = v + '%'; }
+      num.textContent = v == null ? '--%' : Math.round(v) + '%';
+      remTxt.textContent = this.remainTxt(mins, v);
+    }, { ease: HP.easeSoft, start: () => HP.fx(num, 'bob') });
     const cdVal = HP.durMaybe(ok && u.primary ? u.primary.resets_in_seconds : null);
     q('.l-cd').textContent = cdVal ?? '--';
     q('.l-cdseg').style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
@@ -52,7 +58,10 @@ window.SKINS['liquid'] = {
   updateMini(el, u, s) {
     const rem = u && u.ok && u.primary ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
-    el.querySelector('.m-fill').style.width = (rem == null ? 0 : rem) + '%';
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const f = el.querySelector('.m-fill'), n = el.querySelector('.m-num');
+    HP.tween(el, 'm', rem, (v) => {
+      f.style.width = (v == null ? 0 : v) + '%';
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeSoft, start: () => HP.fx(n, 'tick') });
   },
 };

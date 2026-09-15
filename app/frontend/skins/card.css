@@ -8,32 +8,33 @@
 .sk-card{width:264px;padding:13px 16px 11px;border-radius:15px;color:#eef2f8;
   background:linear-gradient(165deg,rgba(17,22,32,.96),rgba(13,16,24,.96));
   border:1px solid rgba(255,255,255,.1);
-  /* 简约/完整切换时与窗口补间动画同步（时长/曲线对齐 Rust 侧 animate_main_resize：
-     ~220ms easeOutCubic，见 main.rs） */
-  transition:width .22s cubic-bezier(.33,1,.68,1),padding .22s cubic-bezier(.33,1,.68,1)}
+  /* 简约/完整切换时与窗口补间动画同步（时长/曲线必须对齐 Rust 侧 animate_main_resize
+     的 240ms easeOutCubic，也要对齐 app.js 的 RESIZE_MS：三个时钟不一样就会
+     出现"内容先到位、窗口还在变"的位移抖动） */
+  transition:width 240ms cubic-bezier(.215,.61,.355,1),padding 240ms cubic-bezier(.215,.61,.355,1)}
 .sk-card.danger{border-color:rgba(239,68,68,.45)}
 .sk-card .head{display:flex;align-items:center;gap:8px;margin-bottom:9px;
-  transition:margin-bottom .22s cubic-bezier(.33,1,.68,1)}
+  transition:margin-bottom 240ms cubic-bezier(.215,.61,.355,1)}
 .sk-card .title{font-family:var(--f-disp);font-size:14px;font-weight:600}
 .sk-card .title em{font-style:normal;font-size:9.5px;color:#0b1220;
   background:linear-gradient(135deg,var(--tone-a),#38bdf8);border-radius:99px;padding:1.5px 7px;
   margin-left:6px;font-weight:700;vertical-align:1px;text-transform:uppercase}
 .sk-card .mail{font-size:10px;color:#707a8e;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
-  max-width:140px;transition:opacity .14s ease,max-width .22s cubic-bezier(.33,1,.68,1)}
+  max-width:140px;transition:opacity .14s ease,max-width 240ms cubic-bezier(.215,.61,.355,1)}
 .sk-card .row{display:flex;align-items:center;gap:9px;margin:7px 0;font-size:11.5px;color:#9aa3b5;
-  max-height:26px;transition:margin .22s cubic-bezier(.33,1,.68,1),max-height .22s cubic-bezier(.33,1,.68,1),
+  max-height:26px;transition:margin 240ms cubic-bezier(.215,.61,.355,1),max-height 240ms cubic-bezier(.215,.61,.355,1),
   opacity .16s ease}
 .sk-card .k{min-width:50px;flex:none;white-space:nowrap}
 .sk-card .bar{flex:1;height:7px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden}
 .sk-card .bar i{display:block;height:100%;width:0%;border-radius:99px;
-  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));transition:width .35s ease}
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b))}
 .sk-card .bar i.wk{background:linear-gradient(90deg,#93c5fd,#3b82f6)}
 .sk-card .row b{font-family:var(--f-num);font-size:13px;color:#e8ecf4;width:44px;text-align:right}
 .sk-card .row.cr b{color:#fbbf24}
 .sk-card .foot{display:flex;align-items:center;gap:6px;margin-top:9px;border-top:1px solid rgba(255,255,255,.07);
   padding-top:8px;font-size:10.5px;color:#707a8e;max-height:30px;
-  transition:margin .22s cubic-bezier(.33,1,.68,1),padding .22s cubic-bezier(.33,1,.68,1),
-  max-height .22s cubic-bezier(.33,1,.68,1),border-top-width .22s cubic-bezier(.33,1,.68,1),opacity .16s ease}
+  transition:margin 240ms cubic-bezier(.215,.61,.355,1),padding 240ms cubic-bezier(.215,.61,.355,1),
+  max-height 240ms cubic-bezier(.215,.61,.355,1),border-top-width 240ms cubic-bezier(.215,.61,.355,1),opacity .16s ease}
 .sk-card .foot .cd{margin-left:auto}
 .sk-card .foot b{color:#a7b0c2;font-weight:500}
 .sk-card .dot{width:7px;height:7px;border-radius:99px;background:#6b7488;flex:none}
@@ -58,7 +59,7 @@ body.compact .sk-card .row{margin:5px 0}
   box-shadow:0 4px 16px rgba(0,0,0,.55);font-family:var(--f-num);font-size:13px}
 .sk-card-mini .m-track{width:52px;height:10px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden}
 .sk-card-mini .m-fill{display:block;height:100%;width:0%;border-radius:99px;
-  background:linear-gradient(90deg,var(--tone-a),var(--tone-b));transition:width .35s ease}
+  background:linear-gradient(90deg,var(--tone-a),var(--tone-b))}
 
 
 /* ============================================================================
@@ -70,12 +71,14 @@ body.compact .sk-card .row{margin:5px 0}
   background:linear-gradient(165deg,rgba(19,25,36,.96),rgba(11,15,22,.96));
   /* §5.1 状态色可插值：根元素原本就有 width/padding 过渡（与 Rust 尺寸补间对齐），
      覆盖 transition 时必须把旧属性一起带上，否则会被吃掉 */
-  transition:width .22s cubic-bezier(.33,1,.68,1),
-             padding .22s cubic-bezier(.33,1,.68,1),
+  transition:width 240ms cubic-bezier(.215,.61,.355,1),
+             padding 240ms cubic-bezier(.215,.61,.355,1),
              --tone-a .5s cubic-bezier(.22,1,.36,1),
              --tone-b .5s cubic-bezier(.22,1,.36,1)}
-/* §5.2 进度曲线统一：.35s ease -> .5s cubic-bezier(.22,1,.36,1)（起步快、收尾缓） */
-.sk-card .bar i,.sk-card-mini .m-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §5.2 进度条补间：v0.6 起改由 JS 逐帧驱动（skins/common.js 的 HP.tween）。
+   原来这里的 `transition:width .5s` 已在 CSS 侧移除 —— 两层缓动会叠成一条长尾，
+   数字到位了条还在爬。现在条宽、数字、颜色共用一个 620ms 时钟，同起同落。
+   （对照纪律：所有"同一件事的两个时钟"必须一起改，见 app.js RESIZE_MS 的注释） */
 /* §5.3 告警：数字的"整块透明度闪烁"由 app.css 的 .danger-flash 全局规则
    （hp-breathe-glow，!important）接管；这里保留原 keyframes 不动，便于回滚 */
 /* §4 挂件形态同步换色 */

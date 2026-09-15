@@ -10,7 +10,7 @@
 .sk-liquid .l-body{position:relative;width:112px;height:112px;border-radius:30px;overflow:hidden;
   background:rgba(10,13,20,.86);backdrop-filter:blur(16px);
   border:1px solid rgba(255,255,255,.12)} /* 外层模糊阴影会被窗口边距裁成直角渐变底（见 card.css 顶部说明） */
-.sk-liquid .l-water{position:absolute;left:0;right:0;bottom:0;height:0%;transition:height .4s ease;
+.sk-liquid .l-water{position:absolute;left:0;right:0;bottom:0;height:0%;
   background:linear-gradient(180deg,color-mix(in srgb,var(--tone-b) 86%,#fff 8%),var(--tone-b))}
 .sk-liquid .l-wave{position:absolute;left:-100%;width:300%;height:15px;top:-13px;fill:var(--tone-b)}
 .sk-liquid .l-wa{animation:skliq-wave 7s linear infinite}
@@ -60,9 +60,8 @@
 .sk-liquid .hp-chrome:hover .tgl{opacity:1}
 .sk-liquid .hp-chrome .tgl:hover{color:#fff;background:rgba(255,255,255,.16);
   border-color:rgba(255,255,255,.24)}
-/* §5.2 过渡曲线统一：液面 .4s ease -> .55s cubic-bezier(.22,1,.36,1) */
-.sk-liquid .l-water{transition:height .55s cubic-bezier(.22,1,.36,1)}
-.sk-liquid-mini .m-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §5.2 液面补间：v0.6 起改由 JS 逐帧驱动（HP.tween + HP.easeSoft），
+   CSS 侧的 transition:height 已移除，避免两层缓动叠成一条长尾 */
 
 /* ---- §5.5 水波重做 ----
    原实现：1 个波长 = 元素宽的 50%（viewBox 里画了 2 个完整周期），
@@ -86,3 +85,8 @@
 @keyframes skliq-wave-v2{from{transform:translateX(0)}to{transform:translateX(50%)}}
 /* §4 挂件形态同步换色 */
 .sk-liquid-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}
+
+/* ---- 紧凑形态：只留水杯（液面高度即剩余%），底部胶囊副标题收起 ----
+   窗口宽度保持 240：按钮组绝对定位在窗口右上，收窄会压到杯体；
+   l-cdseg 的 display 由 JS 写 inline style（在 .l-cap 内部，随容器一起消失） */
+body.compact .sk-liquid .l-cap{display:none!important}

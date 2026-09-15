@@ -1,0 +1,15 @@
+{
+  "name": "gpt-hp-bar-tools",
+  "private": true,
+  "description": "开发/交付用工具：前端动效与十套皮肤的自动化验证、动效预览页生成。与 Tauri 应用本身无关，不影响 cargo 构建。",
+  "scripts": {
+    "verify": "node anim-verify.cjs",
+    "preview": "node anim-preview/build.cjs"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.13"
+  },
+  "dependencies": {
+    "gpt-hp-bar-tools": "file:"
+  }
+}

@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['hero'] = {
   name: '① 血条 Hero',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [320, 140], compact: null },
+  sizes: { full: [320, 140], compact: [320, 112] },
 
   html: `
     <div class="sk-hero">
@@ -36,14 +36,22 @@ window.SKINS['hero'] = {
     el.classList.toggle('danger', danger && rem5 != null && rem5 <= 20);
     el.classList.toggle('nodata', !ok);
 
-    q('.b5').style.width = (rem5 == null ? 0 : rem5) + '%';
-    q('.n5').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
-    q('.n5').classList.toggle('danger-flash', rem5 != null && rem5 <= 20);
+    // 血槽与 30px 大数字吃同一个补间值 —— 两者同起同落到，不会"数字先到、条还在爬"。
+    // 血槽用 easeSoft（体量感，起步不冲），数字额外叠一记"机械弹跳"：
+    // 一次轮询往往只动 1%，条宽那点位移根本看不出来，这记弹跳才是"刚刚刷新了"的信号。
+    const b5 = q('.b5'), n5 = q('.n5');
+    HP.tween(el, 'hp5', rem5, (v) => {
+      b5.style.width = (v == null ? 0 : v) + '%';
+      n5.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeSoft, start: () => HP.fx(n5, 'pop') });
+    n5.classList.toggle('danger-flash', rem5 != null && rem5 <= 20);
+
     const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
     q('.cdv').textContent = cdVal ?? '--';
-    if (s.show_week !== false) {
-      q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
-    }
+    // 周窗口：关掉时传 null（顺带把补间状态复位，重新打开时不会从旧值补一段）
+    HP.tween(el, 'hpw', s.show_week === false ? null : remw, (v) => {
+      q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeSoft });
 
     // 副行：有数据 -> 5h 窗口/重置/周剩余；无数据 -> 无数据源
     q('.win').style.display = ok ? '' : 'none';
@@ -61,7 +69,11 @@ window.SKINS['hero'] = {
     const rem = ok ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
     el.classList.toggle('nodata', rem == null);
-    el.querySelector('.m-fill').style.width = (rem == null ? 0 : rem) + '%';
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const f = el.querySelector('.m-fill'), n = el.querySelector('.m-num');
+    // 挂件窗口只有内容 + 8px，动效一律不位移，只用亮度脉冲（见 common.js HP.FX.charge）
+    HP.tween(el, 'm', rem, (v) => {
+      f.style.width = (v == null ? 0 : v) + '%';
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeSoft, start: () => HP.fx(n, 'charge') });
   },
 };

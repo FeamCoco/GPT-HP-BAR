@@ -9,10 +9,9 @@
 .sk-gauge .gauge-svg{width:168px;height:92px;overflow:visible}
 .sk-gauge .g-track{fill:none;stroke:rgba(255,255,255,.09);stroke-width:10;stroke-linecap:round}
 .sk-gauge .g-arc{fill:none;stroke:var(--tone-b);stroke-width:10;stroke-linecap:round;
-  filter:drop-shadow(0 0 6px color-mix(in srgb,var(--tone-b) 60%,transparent));transition:stroke-dasharray .35s ease}
+  filter:drop-shadow(0 0 6px color-mix(in srgb,var(--tone-b) 60%,transparent))}
 .sk-gauge .g-tick{stroke:rgba(255,255,255,.22);stroke-width:2}
-.sk-gauge .g-needle{stroke:#f1f4fa;stroke-width:2.5;stroke-linecap:round;transform-origin:84px 80px;
-  transition:transform .4s cubic-bezier(.34,1.4,.64,1)}
+.sk-gauge .g-needle{stroke:#f1f4fa;stroke-width:2.5;stroke-linecap:round;transform-origin:84px 80px}
 .sk-gauge .g-hub{fill:#f1f4fa}
 .sk-gauge .num{font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:26px;font-weight:700;color:var(--tone-a);margin-top:-8px}
 .sk-gauge .cap{font-size:10.5px;color:#8b93a5;letter-spacing:1px;margin-top:2px}
@@ -29,7 +28,7 @@
   box-shadow:0 4px 16px rgba(0,0,0,.4);font-family:var(--f-num,"Bahnschrift","Segoe UI",sans-serif);font-size:12.5px}
 .sk-gauge-mini .m-gauge{width:22px;height:13px;overflow:visible;flex:none}
 .sk-gauge-mini .m-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:2.5;stroke-linecap:round}
-.sk-gauge-mini .m-arc{fill:none;stroke:var(--tone-b);stroke-width:2.5;stroke-linecap:round;transition:stroke-dasharray .35s ease}
+.sk-gauge-mini .m-arc{fill:none;stroke:var(--tone-b);stroke-width:2.5;stroke-linecap:round}
 
 
 /* ============================================================================
@@ -42,8 +41,14 @@
   border-color:rgba(56,189,248,.16);
   transition:--tone-a .5s cubic-bezier(.22,1,.36,1),--tone-b .5s cubic-bezier(.22,1,.36,1)}
 .sk-gauge .cap{color:var(--ink-2)}
-/* §5.2 曲线统一：弧线 .35s ease -> .5s；指针保留原有轻微过冲，只把时长对齐（.4 -> .55s） */
-.sk-gauge .g-arc,.sk-gauge-mini .m-arc{transition:stroke-dasharray .5s cubic-bezier(.22,1,.36,1)}
-.sk-gauge .g-needle{transition:transform .55s cubic-bezier(.34,1.32,.64,1)}
+/* §5.2 弧线与指针：v0.6 起改由 JS 逐帧驱动（HP.tween），两者共用一个 620ms 时钟，
+   但曲线不同 —— 弧线 HP.easeOut 稳稳扫过去，指针 HP.easeBack 带一点过冲（回针弹簧感）。
+   CSS 侧的 stroke-dasharray / transform 过渡已移除，否则两层缓动会叠成一条长尾。 */
 /* §4 挂件形态同步换色 */
 .sk-gauge-mini{background:rgba(13,17,25,.92);border-color:rgba(255,255,255,.14)}
+
+/* ---- 紧凑形态：半圆表盘 + 大数字，cap 行与副行（reset/week）、邮箱收起 ----
+   sub/hp-mail 的 display 由 JS 写 inline style，必须 !important */
+body.compact .sk-gauge .cap{display:none!important}
+body.compact .sk-gauge .sub{display:none!important}
+body.compact .sk-gauge .hp-mail{display:none!important}

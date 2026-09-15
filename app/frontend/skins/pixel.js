@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['pixel'] = {
   name: '⑩ 像素 Pixel',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [316, 150], compact: null },
+  sizes: { full: [316, 150], compact: [316, 98] },
 
   html: `
     <div class="pixel sk-pixel">
@@ -45,13 +45,21 @@ window.SKINS['pixel'] = {
     HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('nodata', !ok);
 
-    this.setHearts(el, rem5);
-    this.setBlocks(el, rem5);
+    // 8-bit 的语言是"一格一格跳"，不是平滑跑：心与方块由阶梯缓动驱动，
+    // 逐颗 / 逐格点亮熄灭（硬切、无亚像素位移 —— 像素做平滑运动就不是像素了）。
+    // 数字同步走阶梯，并闪两下（blip）代替位移：老主机的计数器语言
+    const hpEl = q('.p-hp');
+    HP.tween(el, 'px5', rem5, (v) => {
+      this.setHearts(el, v);
+      this.setBlocks(el, v);
+      hpEl.textContent = v == null ? '--' : Math.round(v);
+    }, { ease: HP.easeStep(5), start: () => { HP.fx(hpEl, 'blip'); HP.fx(q('.p-blocks'), 'blip'); } });
 
     const cdVal = HP.durMaybe(ok && u.primary ? u.primary.resets_in_seconds : null);
     q('.p-cd').textContent = cdVal ?? '--';
-    q('.p-wk').textContent = remw == null ? '--' : Math.round(remw);
-    q('.p-hp').textContent = rem5 == null ? '--' : Math.round(rem5);
+    HP.tween(el, 'pxw', s.show_week === false ? null : remw, (v) => {
+      q('.p-wk').textContent = v == null ? '--' : Math.round(v);
+    }, { ease: HP.easeStep(4) });
 
     const show = (sel, on) => { const n = q(sel); if (n) n.style.display = on ? '' : 'none'; };
     show('.p-cdw', s.show_countdown !== false && cdVal != null);
@@ -61,8 +69,11 @@ window.SKINS['pixel'] = {
   updateMini(el, u, s) {
     const rem = u && u.ok && u.primary ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
-    const lit = rem == null ? 0 : Math.ceil(rem / 25); // 4 格，每格 25%
-    el.querySelectorAll('i').forEach((b, i) => b.classList.toggle('on', i < lit));
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const cells = el.querySelectorAll('i'), n = el.querySelector('.m-num');
+    HP.tween(el, 'm', rem, (v) => {
+      const lit = v == null ? 0 : Math.ceil(v / 25);   // 4 格，每格 25%
+      cells.forEach((b, i) => b.classList.toggle('on', i < lit));
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { ease: HP.easeStep(4), start: () => HP.fx(n, 'blip') });
   },
 };

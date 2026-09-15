@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['gauge'] = {
   name: '⑦ 表盘 Gauge',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [228, 220], compact: null },
+  sizes: { full: [228, 220], compact: [228, 170] },
 
   html: `
     <div class="sk-gauge">
@@ -42,17 +42,26 @@ window.SKINS['gauge'] = {
     HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('nodata', !ok);
 
-    // 半圆弧只覆盖 pathLength 的一半：弧长 = 剩余%/2（0~50 / 100）
-    q('.g-arc').setAttribute('stroke-dasharray', (rem5 == null ? 0 : rem5 / 2) + ' 100');
+    // 弧线（重）与指针（轻）都吃同一个 620ms 时钟，但曲线不同：
+    // 弧线用 easeOut 稳稳扫过去，指针用 easeBack 带一点过冲 —— 表盘的"回针弹簧感"
+    // 就在这一点上。半圆弧只覆盖 pathLength 的一半：弧长 = 剩余%/2（0~50 / 100）。
+    const arc = q('.g-arc'), num = q('.num');
+    HP.tween(el, 'g5', rem5, (v) => {
+      arc.setAttribute('stroke-dasharray', (v == null ? 0 : v / 2) + ' 100');
+      num.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { start: () => HP.fx(num, 'pop') });
     // 指针：0% -> -90°（左端），100% -> +90°（右端）
-    q('.g-needle').style.transform = 'rotate(' + (rem5 == null ? -90 : rem5 * 1.8 - 90) + 'deg)';
-    q('.num').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
+    HP.tween(el, 'gneedle', rem5, (v) => {
+      q('.g-needle').style.transform = 'rotate(' + (v == null ? -90 : v * 1.8 - 90) + 'deg)';
+    }, { ease: HP.easeBack });
     const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
     q('.cdv').textContent = cdVal ?? '--';
 
     const cdOn = s.show_countdown !== false && cdVal != null, wkOn = s.show_week !== false;
     q('.cdw').style.display = cdOn ? '' : 'none';
-    if (wkOn) q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
+    HP.tween(el, 'gw', wkOn ? remw : null, (v) => {
+      q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
+    });
     q('.wk').style.display = wkOn ? '' : 'none';
     q('.sub').style.display = (cdOn || wkOn) ? '' : 'none';
     // show_credits：表盘无 credits 行，忽略
@@ -66,7 +75,10 @@ window.SKINS['gauge'] = {
     const ok = !!u.ok;
     const rem = ok ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
-    el.querySelector('.m-arc').setAttribute('stroke-dasharray', (rem == null ? 0 : rem / 2) + ' 100');
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const arc = el.querySelector('.m-arc'), n = el.querySelector('.m-num');
+    HP.tween(el, 'm', rem, (v) => {
+      arc.setAttribute('stroke-dasharray', (v == null ? 0 : v / 2) + ' 100');
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { start: () => HP.fx(n, 'charge') });
   },
 };

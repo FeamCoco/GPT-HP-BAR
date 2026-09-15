@@ -29,7 +29,7 @@
   border:1px solid color-mix(in srgb,var(--tone-a) 25%,transparent)}
 .sk-neon .n-fill{display:block;height:100%;width:0%;border-radius:99px;position:relative;overflow:hidden;
   background:linear-gradient(90deg,var(--tone-a),var(--tone-b));
-  box-shadow:0 0 16px -2px var(--tone-a);transition:width .35s ease}
+  box-shadow:0 0 16px -2px var(--tone-a)}
 .sk-neon .n-fill::after{content:"";position:absolute;inset:0;width:60px;
   background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);
   animation:skneon-sweep 2.6s linear infinite}
@@ -76,12 +76,11 @@
    注 1：按钮组移出文档流后，原先把数字顶到右端的 margin-left:auto 也随之失效，
          所以把 auto 交给 .n-num，保证大数字仍然贴右端。
    注 2：30px 大数字和右上角按钮同一个角落，必须给 n-top 让出按钮宽度，否则按钮会压住 "%"。
-         霓虹没有紧凑形态（sizes.compact = null），按钮组只有 1 个齿轮（20px），
-         所以这里按"按钮左边缘 34px + 8px 间隙 - 内容边距 17px" => padding-right 26px；
-         设计稿写的 56px 是按 2 个按钮（46px）算的，在实机上会多出 ~30px 空档。 */
+         v0.5 起每套皮肤都有紧凑形态 => 按钮组恒为 2 个（46px）：按"按钮左边缘 14+46=60px
+         + 8px 间隙 - 内容边距 17px" => padding-right 51px（完整/紧凑同值）。 */
 .sk-neon .hp-chrome{position:absolute;right:14px;top:11px;z-index:5}
 .sk-neon .n-num{margin-left:auto}
-.sk-neon .n-top{padding-right:26px}
+.sk-neon .n-top{padding-right:51px}
 /* §1 变体② pill：按钮跟着 999px 圆角 + tone 色走，属于赛博那套语言 */
 .sk-neon .hp-chrome .tgl{border-radius:999px;
   border-color:color-mix(in srgb,var(--tone-a) 30%,transparent);
@@ -90,5 +89,11 @@
 .sk-neon .hp-chrome .tgl:hover{color:#e9fdff;border-color:var(--tone-a);
   background:color-mix(in srgb,var(--tone-a) 16%,transparent);
   box-shadow:0 0 10px -2px var(--tone-a)}
-/* §5.2 扫光血槽过渡曲线统一 */
-.sk-neon .n-fill{transition:width .5s cubic-bezier(.22,1,.36,1)}
+/* §5.2 扫光血槽补间：v0.6 起改由 JS 逐帧驱动（HP.tween + 变化瞬间的亮度脉冲），
+   与"永远在跑的扫光（::after）"形成"常态流动 + 事件闪烁"两层节奏。
+   注意 CSS 侧只移除 transition:width，扫光动画本身照旧。 */
+
+/* ---- 紧凑形态：只留标签行（含大数字）+ 扫光血槽，info/sub 两行收起 ----
+   n-info/n-sub 的 display 由 JS 写 inline style，必须 !important */
+body.compact .sk-neon .n-info,
+body.compact .sk-neon .n-sub{display:none!important}

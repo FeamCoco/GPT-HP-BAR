@@ -4,7 +4,7 @@ window.SKINS = window.SKINS || {};
 window.SKINS['battery'] = {
   name: '⑥ 电池 Battery',
   // 逻辑尺寸（乘以字号缩放后由外壳调 set_window_size）
-  sizes: { full: [244, 160], compact: null },
+  sizes: { full: [244, 160], compact: [244, 92] },
 
   html: `
     <div class="sk-battery">
@@ -36,12 +36,19 @@ window.SKINS['battery'] = {
     el.classList.toggle('danger', danger && rem5 != null && rem5 <= 20);
     el.classList.toggle('nodata', !ok);
 
-    q('.fill').style.width = (rem5 == null ? 0 : rem5) + '%';
-    q('.num').textContent = rem5 == null ? '--%' : Math.round(rem5) + '%';
+    // 电量隐喻：填充条平滑充电，数字只做一次亮度脉冲（charge）——
+    // 电池族不做位移，一抖就像"接触不良"，观感反而像坏了
+    const fill = q('.fill'), num = q('.num');
+    HP.tween(el, 'b5', rem5, (v) => {
+      fill.style.width = (v == null ? 0 : v) + '%';
+      num.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { start: () => HP.fx(num, 'charge') });
     const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
     q('.cdv').textContent = cdVal ?? '--';
     q('.cdw').style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
-    if (s.show_week !== false) q('.nw').textContent = remw == null ? '--%' : Math.round(remw) + '%';
+    HP.tween(el, 'bw', s.show_week === false ? null : remw, (v) => {
+      q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
+    });
     q('.wk').style.display = s.show_week === false ? 'none' : '';
     // show_credits：电池无 credits 行，忽略
 
@@ -54,7 +61,10 @@ window.SKINS['battery'] = {
     const ok = !!u.ok;
     const rem = ok ? HP.rem(u.primary.used_percent) : null;
     HP.applyTone(el, rem, s.accent);
-    el.querySelector('.m-fill').style.width = (rem == null ? 0 : rem) + '%';
-    el.querySelector('.m-num').textContent = rem == null ? '--%' : Math.round(rem) + '%';
+    const f = el.querySelector('.m-fill'), n = el.querySelector('.m-num');
+    HP.tween(el, 'm', rem, (v) => {
+      f.style.width = (v == null ? 0 : v) + '%';
+      n.textContent = v == null ? '--%' : Math.round(v) + '%';
+    }, { start: () => HP.fx(n, 'charge') });
   },
 };
