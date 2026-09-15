@@ -335,16 +335,18 @@ fn looks_like_network_error(msg: &str) -> bool {
 
 /// 数据源失败归因（纯函数，便于单测）：把三级回退的结果收敛为前端可引导的状态。
 ///
-/// 优先级（自上而下，命中即返回）——**配置类判定先于网络启发式**。原因：在一台完全没有
-/// 登录态的机器上，三级回退（rest / app-server / relay）必然超时或失败，
-/// `looks_like_network_error` 极易命中；若让网络判定优先，会把"该去登录 Codex"的用户
-/// 误引导成"检查网络/代理"。所以先判"有没有凭据"，再谈"是不是网络问题"：
+/// 优先级（自上而下，命中即返回）——**配置类判定先于网络启发式**：
 ///   1. `ok`       —— 成功取到用量；
-///   2. `no_login` —— 本地没有任何可用凭据（既无 OAuth access_token，也没有 API key），
-///                    首要动作是登录，引导运行 `codex login`；
-///   3. `no_relay` —— 有 key 但缺 base_url（config.toml 只配了一半），引导补齐 base_url；
-///   4. `network`  —— 已备齐凭据、失败原因里出现网络类错误（超时/连接/5xx），引导"稍后重试"；
-///   5. `none`     —— 其余（已配置却全部失败：relay 404、接口不兼容等），通用提示。
+///   2. `no_relay` —— 有 key 但缺 base_url（中转只配了一半），引导补齐 base_url；
+///   3. `no_login` —— **§4 硬保证**：完全没有任何凭据（既无 OAuth access_token、也没有 key），
+///                    即便失败原因像网络故障也归此态，首要动作是登录（`codex login`）；
+///   4. `network`  —— 只配了中转（有 key、无 OAuth）却遇到网络类失败 → 先按网络"稍后重试"；
+///   5. `no_login` —— 无 OAuth 且非网络类失败（如本机 relay 404）→ 仍是"去登录 Codex"；
+///   6. `network`  —— 凭据齐备（有 OAuth）后的网络类失败；
+///   7. `none`     —— 其余（已配置却全部失败：relay 404、接口不兼容等），通用提示。
+///
+/// 注：第 3 步（`!has_login && !has_key`）**不是死代码**——它必须先于第 4 步，
+/// 否则"完全无凭据 + 网络类失败"会被抢成 `network`，而 §4 要求它归 `no_login`。
 ///
 /// 入参（均为"具备条件"判定，不含任何密钥值）：
 ///   - `ok`：是否成功；
@@ -362,20 +364,26 @@ pub fn classify_status(
     if ok {
         return "ok";
     }
-    // —— 配置类判定（先于网络启发式）——
-    // 无任何可用凭据：既未 OAuth 登录，也没有 API key → 首要动作是登录
+    // 有密钥但缺中转地址：只差 base_url → 引导补齐
+    if has_key && !has_base {
+        return "no_relay";
+    }
+    // §4 硬保证：完全没有凭据（无 OAuth、无 key）→ 即便像网络故障也算"未登录"
     if !has_login && !has_key {
         return "no_login";
     }
-    // 有密钥但缺中转地址：只差 base_url → 引导补齐
-    if !has_base && has_key {
-        return "no_relay";
+    // 只配了中转（有 key、无 OAuth）遇网络类失败 → 先按网络重试
+    if !has_login && network_error {
+        return "network";
     }
-    // —— 网络类失败（可重试）——
+    // 无 OAuth 且非网络类（如本机 relay 404）→ 仍引导去登录 Codex
+    if !has_login {
+        return "no_login";
+    }
+    // 凭据齐备（有 OAuth）后的网络类失败
     if network_error {
         return "network";
     }
-    // —— 其余 ——
     "none"
 }
 
@@ -530,6 +538,17 @@ mod tests {
         // 配置齐备却全部失败（relay 404 / 接口不兼容等）→ 通用提示
         assert_eq!(classify_status(false, true, true, true, false), "none");
         assert_eq!(classify_status(false, true, true, false, false), "none");
+    }
+
+    #[test]
+    fn status_section_4_hard_guarantee_and_relay_ordering() {
+        // 本机场景：relay 配置齐（有 key + base_url）但无 OAuth、relay 404（非网络类）
+        // → 归 no_login，给出"去登录 Codex"这条路（§5.4 称本机为"无 OAuth 登录态"）
+        assert_eq!(classify_status(false, false, true, true, false), "no_login");
+        // relay-only（有 key、无 OAuth）遇网络类失败 → 先按网络"重试"，而不是去登录
+        assert_eq!(classify_status(false, false, true, true, true), "network");
+        // 有 OAuth、有 key，但缺 base_url → 中转地址未配 → no_relay
+        assert_eq!(classify_status(false, true, false, true, false), "no_relay");
     }
 
     #[test]
