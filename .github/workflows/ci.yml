@@ -1,0 +1,26 @@
+name: CI
+
+# 编译门禁：任意分支 push 与 PR 都编译一遍（release 配置 + 单测），只编译、不打包、不建 Release。
+# 发版仍由 release.yml 在 `v*` 标签时负责：这里只声明 `branches`，按 GitHub 语义
+# 该工作流对 tag 的 push 不触发（只有同时声明 branches 与 tags 时 tag 才会触发）。
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 仓库不含 .cargo/config.toml（个人配置），CI 走默认 MSVC 工具链 —— 与 release.yml 一致
+      - name: Build (release profile, no bundle)
+        working-directory: app
+        shell: pwsh
+        run: cargo build --release
+
+      - name: Unit tests
+        working-directory: app
+        shell: pwsh
+        run: cargo test
