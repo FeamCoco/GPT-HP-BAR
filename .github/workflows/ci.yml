@@ -20,7 +20,27 @@ jobs:
         shell: pwsh
         run: cargo build --release
 
-      - name: Unit tests
+      # 单测复用上面的 release 产物（release profile），省掉一半重复编译
+      - name: Unit tests (release profile)
         working-directory: app
         shell: pwsh
-        run: cargo test
+        run: cargo test --release
+
+  # 前端动效/皮肤验收套件（tools/ 下的断言集）——此前只在人工跑，纳入门禁做长期回归保护。
+  # 与 cargo 构建无关：ubuntu-latest 装好 node 依赖后跑一次纯 JS 校验。
+  motion-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install tools deps
+        working-directory: tools
+        run: npm ci
+
+      - name: Verify motion & skins
+        working-directory: tools
+        run: npm run verify
