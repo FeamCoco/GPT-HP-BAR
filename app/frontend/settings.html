@@ -92,6 +92,8 @@
     <section>
       <h3 data-i18n="sec_source">数据源</h3>
       <p class="src" id="src_info">读取中…</p>
+      <p class="tip" id="src_hint"></p>
+      <button id="src_action" class="btn ghost" style="display:none"></button>
       <button id="rescan" class="btn" data-i18n="btn_refresh">立即刷新数据</button>
       <p class="tip" data-i18n-html="src_tip_html">无数据源时：运行 <code>codex login</code> 完成 ChatGPT 登录后点"立即刷新"；
         中转需提供 wham/usage 兼容接口并设为 config.toml 的 model_provider。</p>

@@ -10,6 +10,9 @@ let usage = null;
 let settings = null;
 let cur = null;
 
+// 心跳：挂件渲染后与每 5s 上报，Rust 保活线程据此判断本窗口 WebView2 是否假死并自愈
+function alivePing() { invoke('alive_ping', { label: 'mini' }).catch(() => {}); }
+
 function mount() {
   const id = settings && window.SKINS[settings.skin] ? settings.skin : 'card';
   cur = window.SKINS[id];
@@ -39,14 +42,18 @@ function syncSize() {
   const w = el.offsetWidth + 8;
   const h = el.offsetHeight + 8;
   invoke('set_window_size', { w, h }).catch(() => {});
+  alivePing();
 }
 
 listen('usage', (e) => {
   usage = e.payload;
   const el = document.querySelector('#root > *');
   if (cur && el) cur.updateMini(el, usage, settings || {});
+  alivePing();
 });
 
 listen('settings', (e) => { settings = e.payload; mount(); });
 
 invoke('get_settings').then((s) => { settings = s; mount(); }).catch(() => mount());
+
+setInterval(alivePing, 5000);

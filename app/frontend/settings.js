@@ -5,6 +5,9 @@ const { listen } = window.__TAURI__.event;
 const $ = (s) => document.querySelector(s);
 const T = (k) => window.i18nT(k);
 
+// "打开 Codex 登录说明" 的目标（未登录状态时的下一步操作）
+const CODEX_LOGIN_URL = "https://github.com/openai/codex";
+
 // 版本号以运行时配置（tauri.conf.json 的 version）为准，避免 HTML 里写死的值长期不同步
 // （历史上它停在 v0.3）。拿不到就保留 HTML 里的兜底值。
 Promise.resolve(window.__TAURI__.app.getVersion())
@@ -73,14 +76,29 @@ async function persist() {
   }
 }
 
+// 数据源状态三态引导：与 Rust 侧 classify_status 的状态集合对齐
+// （ok | no_login | no_relay | network | none）。仅"未登录"给出可点的下一步操作。
 function showUsage(u) {
   lastUsage = u;
   const el = $("#src_info");
+  const hint = $("#src_hint");
+  const act = $("#src_action");
   if (u && u.ok) {
     el.innerHTML = `<b style="color:#6ee7b7">${T('connected')}</b> · ${u.source} · ${T('conn_5h_left')} ${Math.round(100 - (u.primary.used_percent ?? 0))}%` +
       (u.email ? ` · ${u.email}` : "") + (u.plan ? ` · ${String(u.plan).toUpperCase()}` : "");
+    hint.textContent = "";
+    act.style.display = "none";
+    return;
+  }
+  const status = (u && u.status) || "none";
+  el.innerHTML = `<b style="color:#f87171">${T('src_none')}</b>` +
+    (u && u.error ? ` · ${String(u.error).slice(0, 160)}` : ` · ${T('src_none_detail')}`);
+  hint.textContent = T('src_hint_' + status);
+  if (status === "no_login") {
+    act.textContent = T('btn_open_login');
+    act.style.display = "";
   } else {
-    el.innerHTML = `<b style="color:#f87171">${T('src_none')}</b> · ${T('src_none_detail')}`;
+    act.style.display = "none";
   }
 }
 
@@ -177,6 +195,11 @@ for (const k of FIELDS) {
 $("#rescan").addEventListener("click", () => {
   $("#src_info").textContent = T('refreshing');
   invoke("refresh_now").then(showUsage).catch((e) => { $("#src_info").textContent = T('refresh_failed') + e; });
+});
+
+// 未登录状态下的"打开登录说明"：交给 Rust 用系统浏览器打开（仅 http/https）
+$("#src_action").addEventListener("click", () => {
+  invoke("open_url", { url: CODEX_LOGIN_URL }).catch(() => {});
 });
 
 $("#reset").addEventListener("click", async () => {

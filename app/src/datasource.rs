@@ -8,7 +8,7 @@
 //!
 //! 安全约定：本模块绝不打印/记录任何 token，probe 输出只含状态与数值。
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -18,14 +18,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const WHAM_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 const UA: &str = "GPT-HP-BAR/0.1 (Windows; +local)";
 
-#[derive(Serialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct WindowUsage {
     pub used_percent: Option<f64>,
     pub window_minutes: Option<u64>,
     pub resets_in_seconds: Option<i64>,
 }
 
-#[derive(Serialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct Usage {
     pub ok: bool,
     pub source: String,
@@ -36,6 +36,11 @@ pub struct Usage {
     pub secondary: WindowUsage,
     pub error: Option<String>,
     pub fetched_at: u64,
+    /// 数据源状态（前端据此给出各自的下一步引导）：
+    /// `ok` | `no_login` | `no_relay` | `network` | `none`
+    /// `#[serde(default)]` 保证老消费者读到缺失字段时退化为空串而非报错。
+    #[serde(default)]
+    pub status: String,
 }
 
 fn now_unix() -> u64 {
@@ -305,12 +310,78 @@ fn fetch_relay(base_url: &str, key: &str) -> Result<Usage, String> {
     Err(format!("relay: {}", last_err))
 }
 
+/// 失败原因文本里是否含网络类错误（超时 / 连接失败 / HTTP 5xx）。
+/// probe 与 fetch_all 的 attempted 都是“{url}: {err}”或“{url} -> HTTP {code}”形态，
+/// 这里只做保守的子串匹配：命中才归为 network（可重试），否则交回 no_login/no_relay。
+fn looks_like_network_error(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    const NEEDLES: &[&str] = &[
+        "timed out",
+        "timeout",
+        "connection refused",
+        "connection reset",
+        "connection closed",
+        "error sending request",
+        "dns",
+        "temporary failure",
+        "network",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+    ];
+    NEEDLES.iter().any(|n| m.contains(n))
+}
+
+/// 数据源失败归因（纯函数，便于单测）：把三级回退的结果收敛为前端可引导的状态。
+///
+/// 优先级（自上而下，命中即返回）：
+///   1. `ok`       —— 成功取到用量；
+///   2. `network`  —— 失败原因里出现网络类错误（超时/连接/5xx），引导“稍后重试”；
+///   3. `no_login` —— 本地没有任何可用凭据（既无 OAuth access_token，也无中转配置），
+///                    引导运行 `codex login`（这是首要动作）；
+///   4. `no_relay` —— 已登录但仍未配置中转，引导在 config.toml 配 base_url + 密钥；
+///   5. `none`     —— 其余（已配置却全部失败：relay 404、接口不兼容等），通用提示。
+///
+/// 入参：
+///   - `ok`：是否成功；
+///   - `has_login`：auth.json 是否提供了 ChatGPT OAuth access_token；
+///   - `has_relay`：是否同时具备 base_url 与密钥（config.toml bearer / api_key）；
+///   - `network_error`：attempted 里是否含网络类错误。
+pub fn classify_status(ok: bool, has_login: bool, has_relay: bool, network_error: bool) -> &'static str {
+    if ok {
+        return "ok";
+    }
+    if network_error {
+        return "network";
+    }
+    if !has_login && !has_relay {
+        return "no_login";
+    }
+    if has_login && !has_relay {
+        return "no_relay";
+    }
+    if !has_login {
+        return "no_login";
+    }
+    "none"
+}
+
 /// 依次尝试全部数据源；同时从 auth.json 补充 plan/email 身份信息
 pub fn fetch_all() -> Usage {
     let auth = read_auth();
     let config = read_config();
     let account_id = auth.as_ref().and_then(|a| a.id_token.as_ref())
         .and_then(|t| identity_from_id_token(t).1.clone());
+
+    // 归因所需的两个“具备条件”判定（不涉及任何密钥值）
+    let has_login = auth.as_ref().map_or(false, |a| a.access_token.is_some());
+    let has_relay = {
+        let base = config.as_ref().and_then(|c| c.0.clone());
+        let key = config.as_ref().and_then(|c| c.1.clone())
+            .or_else(|| auth.as_ref().and_then(|a| a.api_key.clone()));
+        base.is_some() && key.is_some()
+    };
 
     let mut attempted: Vec<String> = Vec::new();
 
@@ -359,6 +430,10 @@ pub fn fetch_all() -> Usage {
         ..Default::default()
     });
 
+    // 失败归因：结果状态收敛为 ok/no_login/no_relay/network/none，供前端三态引导
+    let network_error = attempted.iter().any(|e| looks_like_network_error(e));
+    usage.status = classify_status(usage.ok, has_login, has_relay, network_error).to_string();
+
     // 身份信息（任何来源都可能没有，从本地 auth 补齐）
     if let Some(a) = auth {
         if usage.plan.is_none() || usage.email.is_none() {
@@ -395,10 +470,54 @@ pub fn probe() {
     }
     println!("\n-- fetch_all 综合结果 --");
     let u = fetch_all();
-    println!("ok={} source={}", u.ok, u.source);
+    println!("ok={} source={} status={}", u.ok, u.source, u.status);
     println!("plan={:?} email={:?}", u.plan, u.email);
     println!("primary: used={:?} window_min={:?} reset_in={:?}", u.primary.used_percent, u.primary.window_minutes, u.primary.resets_in_seconds);
     println!("secondary: used={:?} window_min={:?} reset_in={:?}", u.secondary.used_percent, u.secondary.window_minutes, u.secondary.resets_in_seconds);
     println!("credits={:?}", u.credits.is_some());
     if let Some(e) = &u.error { println!("error: {}", e); }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_status, looks_like_network_error};
+
+    #[test]
+    fn status_ok_wins() {
+        assert_eq!(classify_status(true, false, false, true), "ok");
+        assert_eq!(classify_status(true, true, true, false), "ok");
+    }
+
+    #[test]
+    fn status_network_precedes_credentials() {
+        // 网络错误优先于“未登录/未配置”——它是可重试的瞬时故障
+        assert_eq!(classify_status(false, false, false, true), "network");
+        assert_eq!(classify_status(false, true, true, true), "network");
+    }
+
+    #[test]
+    fn status_no_login_when_nothing_configured() {
+        assert_eq!(classify_status(false, false, false, false), "no_login");
+        // 有中转但没登录：没凭据仍是首要动作 → 仍引导登录
+        assert_eq!(classify_status(false, false, true, false), "no_login");
+    }
+
+    #[test]
+    fn status_no_relay_when_logged_in_but_relay_missing() {
+        assert_eq!(classify_status(false, true, false, false), "no_relay");
+    }
+
+    #[test]
+    fn status_none_when_configured_but_failed() {
+        assert_eq!(classify_status(false, true, true, false), "none");
+    }
+
+    #[test]
+    fn network_error_detection() {
+        assert!(looks_like_network_error("https://x/y: error sending request: timed out"));
+        assert!(looks_like_network_error("https://x/y -> HTTP 503"));
+        assert!(looks_like_network_error("connection refused"));
+        assert!(!looks_like_network_error("https://x/y -> HTTP 404"));
+        assert!(!looks_like_network_error("rest: auth.json 无 tokens.access_token"));
+    }
 }

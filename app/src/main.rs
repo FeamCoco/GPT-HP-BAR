@@ -10,10 +10,12 @@ mod datasource;
 mod settings;
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+#[cfg(windows)]
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalSize, State, WebviewUrl, WebviewWindowBuilder,
 };
@@ -22,6 +24,8 @@ use tauri::{
 use windows::core::{BOOL, w};
 #[cfg(windows)]
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, RPC_E_CHANGED_MODE, S_FALSE, S_OK};
+#[cfg(windows)]
+use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 #[cfg(windows)]
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
@@ -53,8 +57,22 @@ fn probe_dpi_aware() {
     }
 }
 
-/// 托盘句柄，轮询线程里按额度重绘图标
-struct TrayState(Mutex<Option<tauri::tray::TrayIcon>>);
+/// 托盘图标句柄（按额度重绘）+ 菜单项句柄（动态文案与勾选态需要运行时更新）
+struct TrayState {
+    tray: Mutex<Option<tauri::tray::TrayIcon>>,
+    menu: Mutex<Option<TrayMenu>>,
+}
+
+/// 需要运行时改动的菜单项句柄。
+/// `show`/`mini` 是勾选项（文案 + 勾选态跟随真实状态）；`refresh` 是动作项，
+/// 刷新期间改成“刷新中…”并禁用，作为点击后的即时反馈。
+struct TrayMenu {
+    show: CheckMenuItem<tauri::Wry>,
+    mini: CheckMenuItem<tauri::Wry>,
+    refresh: MenuItem<tauri::Wry>,
+    /// 当前菜单语言（刷新结束后按语言还原文案）
+    lang: String,
+}
 
 /// 当前设置（含轮询间隔的原子读取）
 struct AppState {
@@ -66,13 +84,36 @@ struct AppState {
     mini_size: Arc<Mutex<(f64, f64)>>,
 }
 
-/// 托盘菜单文案：[显示/隐藏, 设置, 立即刷新, 退出]
-fn tray_labels(lang: &str) -> [&'static str; 4] {
-    if lang == "en" {
-        ["Show / Hide overlay", "Settings…", "Refresh now", "Quit"]
-    } else {
-        ["显示 / 隐藏悬浮窗", "设置…", "立即刷新", "退出"]
+/// 悬浮窗开关项文案：跟随当前可见性（"显示/隐藏悬浮窗"）
+fn label_show(lang: &str, visible: bool) -> &'static str {
+    match (lang == "en", visible) {
+        (true, true) => "Hide overlay",
+        (true, false) => "Show overlay",
+        (false, true) => "隐藏悬浮窗",
+        (false, false) => "显示悬浮窗",
     }
+}
+
+fn label_mini(lang: &str) -> &'static str {
+    if lang == "en" { "Taskbar widget" } else { "任务栏挂件" }
+}
+
+fn label_settings(lang: &str) -> &'static str {
+    if lang == "en" { "Settings…" } else { "设置…" }
+}
+
+/// “立即刷新”文案；`busy` 为真时显示“刷新中…”作为点击后的即时反馈
+fn label_refresh(lang: &str, busy: bool) -> &'static str {
+    match (lang == "en", busy) {
+        (true, true) => "Refreshing…",
+        (true, false) => "Refresh now",
+        (false, true) => "刷新中…",
+        (false, false) => "立即刷新",
+    }
+}
+
+fn label_quit(lang: &str) -> &'static str {
+    if lang == "en" { "Quit" } else { "退出" }
 }
 
 fn settings_title(lang: &str) -> &'static str {
@@ -83,23 +124,85 @@ fn settings_title(lang: &str) -> &'static str {
     }
 }
 
-fn tray_menu(app: &AppHandle, lang: &str) -> tauri::Result<Menu<tauri::Wry>> {
-    let [l_show, l_set, l_refresh, l_quit] = tray_labels(lang);
-    let show = MenuItem::with_id(app, "show", l_show, true, None::<&str>)?;
-    let st = MenuItem::with_id(app, "settings", l_set, true, None::<&str>)?;
-    let refresh = MenuItem::with_id(app, "refresh", l_refresh, true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", l_quit, true, None::<&str>)?;
-    Menu::with_items(app, &[&show, &st, &refresh, &quit])
+/// 构建托盘菜单：文案随语言与真实状态，`show` / `mini` 用 CheckMenuItem 承载勾选态，
+/// `refresh` 为动作项。返回菜单本体 + 之后需要运行时更新的句柄。
+fn build_tray_menu(app: &AppHandle, lang: &str) -> tauri::Result<(Menu<tauri::Wry>, TrayMenu)> {
+    let s = app.state::<AppState>().settings.lock().map(|g| g.clone()).unwrap_or_default();
+    let visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(true);
+
+    let show = CheckMenuItem::with_id(app, "show", label_show(lang, visible), true, visible, None::<&str>)?;
+    let mini = CheckMenuItem::with_id(app, "mini", label_mini(lang), true, s.mini_enabled, None::<&str>)?;
+    let st = MenuItem::with_id(app, "settings", label_settings(lang), true, None::<&str>)?;
+    let refresh = MenuItem::with_id(app, "refresh", label_refresh(lang, false), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", label_quit(lang), true, None::<&str>)?;
+
+    let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&show, &mini, &st, &refresh, &quit];
+    let menu = Menu::with_items(app, &items)?;
+    Ok((menu, TrayMenu { show, mini, refresh, lang: lang.to_string() }))
+}
+
+/// 更新菜单项文案与勾选态到当前真实状态（悬浮窗可见性 / 任务栏挂件开关）。
+fn sync_tray_menu(app: &AppHandle) {
+    let visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(true);
+    let mini_enabled = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .map(|g| g.mini_enabled)
+        .unwrap_or(true);
+    // 先把句柄克隆出来再释放锁，避免持锁调用菜单 setter
+    let (show, mini, raw_lang) = {
+        let st = app.state::<TrayState>();
+        let Ok(g) = st.menu.lock() else { return };
+        let Some(m) = g.as_ref() else { return };
+        (m.show.clone(), m.mini.clone(), m.lang.clone())
+    };
+    let lang = if raw_lang == "en" { "en" } else { "zh" };
+    let _ = show.set_text(label_show(lang, visible));
+    let _ = show.set_checked(visible);
+    let _ = mini.set_checked(mini_enabled);
+}
+
+/// 刷新反馈：把“立即刷新”改成“刷新中…”并临时禁用，结束后还原（按当前语言）。
+fn set_refreshing(app: &AppHandle, busy: bool) {
+    // 先把句柄克隆出来再释放锁（本函数会从后台刷新线程调用）
+    let (refresh, raw_lang) = {
+        let st = app.state::<TrayState>();
+        let Ok(g) = st.menu.lock() else { return };
+        let Some(m) = g.as_ref() else { return };
+        (m.refresh.clone(), m.lang.clone())
+    };
+    let lang = if raw_lang == "en" { "en" } else { "zh" };
+    let _ = refresh.set_text(label_refresh(lang, busy));
+    let _ = refresh.set_enabled(!busy);
+}
+
+/// 重建托盘菜单并换到现存图标上（语言切换 / 状态变化后用）
+fn rebuild_tray_menu(app: &AppHandle, lang: &str) {
+    let (menu, handles) = match build_tray_menu(app, lang) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    {
+        let st = app.state::<TrayState>();
+        let Ok(mut g) = st.menu.lock() else { return };
+        *g = Some(handles);
+    }
+    let tray = app.state::<TrayState>().tray.lock().map(|g| g.clone()).unwrap_or(None);
+    if let Some(t) = tray {
+        let _ = t.set_menu(Some(menu));
+    }
 }
 
 /// 界面语言切换的桌面侧应用：重建托盘菜单 + 更新设置窗口标题
 fn apply_lang(app: &AppHandle, lang: &str) {
-    let tray = app.state::<TrayState>().0.lock().map(|g| g.clone()).unwrap_or(None);
-    if let Some(t) = tray {
-        if let Ok(menu) = tray_menu(app, lang) {
-            let _ = t.set_menu(Some(menu));
-        }
-    }
+    rebuild_tray_menu(app, lang);
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.set_title(settings_title(lang));
     }
@@ -117,7 +220,7 @@ fn main() {
         return;
     }
     // --probe-vd [hwnd]：打印窗口句柄及其是否在当前虚拟桌面（缺省取前台窗口），
-    // 用于验证虚拟桌面切换检测（与 ensure_on_current_desktop 同一 API）
+    // 用于验证虚拟桌面切换检测（与 reconcile_window 同一 API）
     #[cfg(windows)]
     if std::env::args().nth(1).as_deref() == Some("--probe-vd") {
         probe_dpi_aware();
@@ -146,12 +249,35 @@ fn main() {
         return;
     }
 
+    // --probe-mini [hwnd]：打印挂件窗口一手状态（可见 / cloaked / topmost / 矩形 /
+    // 命中窗口(GA_ROOT) / 最后 ack 时间戳）。异地机器看不到画面时，这是唯一的一手证据。
+    #[cfg(windows)]
+    if std::env::args().nth(1).as_deref() == Some("--probe-mini") {
+        probe_dpi_aware();
+        let arg = std::env::args().nth(2).and_then(|a| a.parse::<isize>().ok());
+        mini_probe(arg);
+        return;
+    }
+
     let init_settings = settings::load();
     let init_poll = Arc::new(AtomicU32::new(init_settings.poll_secs.clamp(10, 600)));
     let init_lang = init_settings.lang.clone();
 
     tauri::Builder::default()
-        .manage(TrayState(Mutex::new(None)))
+        // 单实例守卫必须是第一个注册的插件：让它在其它插件之前运行。
+        // 第二次启动的进程只唤起既有实例（show + focus + reconcile_window），随即退出。
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let a = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if let Some(w) = a.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+                #[cfg(windows)]
+                reconcile_window(&a, "main");
+            });
+        }))
+        .manage(TrayState { tray: Mutex::new(None), menu: Mutex::new(None) })
         .manage(AppState {
             settings: Mutex::new(init_settings),
             poll_secs: init_poll.clone(),
@@ -169,8 +295,8 @@ fn main() {
                 }
             }
 
-            // 托盘菜单（文案随界面语言；设置里切换语言后由 apply_lang 重建）
-            let menu = tray_menu(app.handle(), &init_lang)?;
+            // 托盘菜单（文案随界面语言与真实状态；设置里切换语言后由 apply_lang 重建）
+            let (menu, menu_handles) = build_tray_menu(app.handle(), &init_lang)?;
 
             let tray = tauri::tray::TrayIconBuilder::with_id("main")
                 .icon(tauri::include_image!("icons/32x32.png"))
@@ -182,21 +308,51 @@ fn main() {
                         if let Some(w) = app.get_webview_window("main") {
                             if w.is_visible().unwrap_or(false) {
                                 let _ = w.hide();
+                                sync_tray_menu(app);
                             } else {
-                                let _ = w.show();
-                                let _ = w.set_focus();
+                                // 显隐/重挂都派发到主线程（窗口变更只在主线程）
+                                let a = app.clone();
+                                let _ = app.run_on_main_thread(move || {
+                                    if let Some(w) = a.get_webview_window("main") {
+                                        let _ = w.show();
+                                        let _ = w.set_focus();
+                                    }
+                                    #[cfg(windows)]
+                                    reconcile_window(&a, "main");
+                                    sync_tray_menu(&a);
+                                });
                             }
                         }
                     }
-                    "settings" => open_settings_window(app),                    "refresh" => {
-                        let u = datasource::fetch_all();
-                        let _ = app.emit("usage", &u);
+                    "mini" => {
+                        // 挂件开关：切换即持久化（免开设置窗），并即时落位/收起
+                        let next = {
+                            let st = app.state::<AppState>();
+                            let mut s = st.settings.lock().map(|g| g.clone()).unwrap_or_default();
+                            s.mini_enabled = !s.mini_enabled;
+                            let _ = settings::save(&s);
+                            *st.settings.lock().unwrap() = s.clone();
+                            s
+                        };
+                        #[cfg(windows)]
+                        {
+                            let st = app.state::<AppState>();
+                            position_mini(app, &st);
+                        }
+                        let _ = app.emit("settings", &next);
+                        sync_tray_menu(app);
                     }
+                    "settings" => open_settings_window(app),
+                    "refresh" => spawn_refresh(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .build(app)?;
-            *app.state::<TrayState>().0.lock().unwrap() = Some(tray);
+            {
+                let st = app.state::<TrayState>();
+                *st.tray.lock().unwrap() = Some(tray);
+                *st.menu.lock().unwrap() = Some(menu_handles);
+            }
 
             // 设置窗口：关闭时隐藏而非销毁，再次打开直接 show
             if let Some(sw) = app.get_webview_window("settings") {
@@ -230,21 +386,15 @@ fn main() {
                 let _ = handle.emit("usage", &u);
                 #[cfg(windows)]
                 {
-                    // 虚拟桌面切换后，可见的悬浮类窗口会被 cloaked 在旧桌面上
-                    // （WS_VISIBLE 仍在，show() 是 no-op）——重挂到当前桌面；
-                    // 用户主动隐藏的（is_visible=false）保持隐藏。
-                    // ShowWindow 同样会同步 SendMessage 到属主线程，必须派发到主线程做
+                    // 虚拟桌面切换与全屏应用都会给顶层窗口打 DWM cloak 标记：此时
+                    // WS_VISIBLE 仍在、IsWindowVisible 为真、show() 是 no-op —— 就是"看不见"。
+                    // reconcile_window 以 DWMWA_CLOAKED 为权威判据，区分"在别的虚拟桌面"
+                    // （hide+show 重挂）与"其它成因如全屏"（主动隐藏，解除后恢复）。
+                    // ShowWindow 会同步 SendMessage 到属主线程，必须派发到主线程做。
                     let h2 = handle.clone();
                     let _ = handle.run_on_main_thread(move || {
                         for label in ["main", "mini"] {
-                            if let Some(w) = h2.get_webview_window(label) {
-                                if let Ok(h) = w.hwnd() {
-                                    let h = HWND(h.0);
-                                    if unsafe { IsWindowVisible(h).as_bool() } {
-                                        ensure_on_current_desktop(h);
-                                    }
-                                }
-                            }
+                            reconcile_window(&h2, label);
                         }
                     });
                     let st = handle.state::<AppState>();
@@ -279,7 +429,7 @@ fn main() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![refresh_now, set_window_size, open_settings, get_settings, save_settings])
+        .invoke_handler(tauri::generate_handler![refresh_now, set_window_size, open_settings, get_settings, save_settings, alive_ping, open_url])
         .run(tauri::generate_context!())
         .expect("error while running gpt-hp-bar");
 }
@@ -287,6 +437,64 @@ fn main() {
 #[tauri::command]
 fn refresh_now() -> datasource::Usage {
     datasource::fetch_all()
+}
+
+/// 前端心跳时间戳（Unix 秒）：app.js / mini.js 每次 render 后与每 5s 上报一次。
+/// 保活线程据此判断 WebView2 渲染进程是否假死（transparent 窗口的渲染进程一旦被终止，
+/// 窗口会变成全透明"看不见"，而置顶保活救不回来，只能重载前端）。
+static ACK_MAIN: AtomicU64 = AtomicU64::new(0);
+static ACK_MINI: AtomicU64 = AtomicU64::new(0);
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// 某窗口的最后 ack 时间戳；0 表示从未上报。
+#[cfg(windows)]
+fn last_ack(label: &str) -> u64 {
+    match label {
+        "mini" => ACK_MINI.load(Ordering::Relaxed),
+        _ => ACK_MAIN.load(Ordering::Relaxed),
+    }
+}
+
+/// 前端心跳命令：记录各窗口最后 ack 时间戳（无副作用、可从任意线程调用）。
+#[tauri::command]
+fn alive_ping(label: String) {
+    let now = now_secs();
+    match label.as_str() {
+        "mini" => ACK_MINI.store(now, Ordering::Relaxed),
+        _ => ACK_MAIN.store(now, Ordering::Relaxed),
+    };
+}
+
+/// 用系统默认浏览器打开链接（设置面板的"打开登录说明"用）。
+/// 只放行 http/https，避免把前端不可信输入当任意协议/文件打开；
+/// 用 rundll32 url.dll 打开可避免拉起一个控制台窗口。
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("仅允许 http(s) 链接".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url.as_str()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Err("仅 Windows 支持".into())
+    }
 }
 
 /// 主窗口尺寸过渡的世代号：连续切换时旧的补间线程看到世代变化立即退出
@@ -1053,31 +1261,203 @@ fn diag_mini(info: &BandInfo, pos: &str, x: i32, y: i32, mw: i32, gaps: &[(i32, 
 // 18:37:49 各只留下落位行、之后再无输出），用户表现为"点收起没反应"。
 // 现在只用浮动置顶 + 保活 tick 的命中测试兜底（见 mini_keepalive_tick）。
 
-/// 保活线程的状态诊断：追加到 %APPDATA%/GPT-HP-BAR/mini-diag.log，
-/// 仅在 (存活, 被遮挡) 组合变化时写一行 —— 挂件"消失"可以事后归因。
+/// 保活线程的一手状态快照，写进 mini-diag.log 的 `watch` 行（用于事后归因"看不见"）。
 #[cfg(windows)]
-fn watch_diag(alive: bool, occluded: bool) {
-    static LAST: Mutex<(bool, bool)> = Mutex::new((true, false));
+struct WatchInfo {
+    alive: bool,
+    occluded: bool,
+    cloaked: bool,
+    topmost: bool,
+    /// 遮挡挂件中心的窗口（GA_ROOT）；未被遮挡时为 None
+    occluded_by: Option<isize>,
+    /// 距最后一次前端 ack 的秒数；< 0 表示从未 ack
+    ack_age: i64,
+}
+
+/// 保活线程的状态诊断：追加到 %APPDATA%/GPT-HP-BAR/mini-diag.log。
+/// 为免每 250ms 刷屏，仅在 (存活, 被遮挡, cloaked, topmost) 组合变化时写一行；
+/// **原有前缀字段顺序（t/alive/occluded）保持不变**，新字段一律追加到末尾 ——
+/// 换机器排查时看不到实机画面，这个文件就是唯一的一手证据。
+#[cfg(windows)]
+fn watch_diag(info: &WatchInfo) {
+    static LAST: Mutex<(bool, bool, bool, bool)> = Mutex::new((true, false, false, false));
+    let key = (info.alive, info.occluded, info.cloaked, info.topmost);
     let Ok(mut last) = LAST.lock() else {
         return;
     };
-    if *last == (alive, occluded) {
+    if *last == key {
         return;
     }
-    *last = (alive, occluded);
+    *last = key;
     drop(last);
-    let t = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let t = now_secs();
+    let occluded_by = match info.occluded_by {
+        Some(h) => format!("0x{h:x}"),
+        None => "none".to_string(),
+    };
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(settings::config_path().with_file_name("mini-diag.log"))
     {
         use std::io::Write;
-        let _ = writeln!(f, "watch t={t} alive={alive} occluded={occluded}");
+        let _ = writeln!(
+            f,
+            "watch t={t} alive={} occluded={} cloaked={} topmost={} occluded_by={} ack_age={}",
+            info.alive, info.occluded, info.cloaked, info.topmost, occluded_by, info.ack_age
+        );
     }
+}
+
+/// 距最后一次 ack 的秒数；返回 -1 表示从未 ack（启动初期的宽限，避免误判假死）。
+#[cfg(windows)]
+fn ack_age_secs(label: &str) -> i64 {
+    let last = last_ack(label);
+    if last == 0 {
+        return -1;
+    }
+    now_secs().saturating_sub(last) as i64
+}
+
+/// WebView2 假死自愈：窗口正在显示且前端 ack 超时 → reload 该窗口前端（按 label 节流）。
+#[cfg(windows)]
+fn maybe_reload_stale(app: &AppHandle, label: &str, enabled: bool, stale_secs: u64, throttle_secs: u64, last: &AtomicU64) {
+    if !enabled {
+        return;
+    }
+    let Some(w) = app.get_webview_window(label) else { return };
+    if !w.is_visible().unwrap_or(false) {
+        return;
+    }
+    let age = ack_age_secs(label);
+    if age < 0 || (age as u64) <= stale_secs {
+        return;
+    }
+    let now = now_secs();
+    if now.saturating_sub(last.load(Ordering::Relaxed)) < throttle_secs {
+        return;
+    }
+    last.store(now, Ordering::Relaxed);
+    let _ = w.eval("location.reload()");
+}
+
+/// 量取"任务栏是否在位"：Shell_TrayWnd 可见性 + Win32 矩形 vs 挂件所在显示器矩形。
+/// 找不到任务栏（异常）时返回 true —— 宁可不动，也不误藏挂件。
+#[cfg(windows)]
+fn mini_taskbar_present(win: &tauri::WebviewWindow) -> bool {
+    let monitor = win
+        .current_monitor()
+        .ok()
+        .flatten()
+        .map(|m| {
+            let p = m.position();
+            let sz = m.size();
+            RECT {
+                left: p.x,
+                top: p.y,
+                right: p.x + sz.width as i32,
+                bottom: p.y + sz.height as i32,
+            }
+        })
+        .unwrap_or(RECT { left: 0, top: 0, right: i32::MAX / 2, bottom: i32::MAX / 2 });
+    unsafe {
+        let Ok(tray) = FindWindowW(w!("Shell_TrayWnd"), None) else {
+            return true;
+        };
+        let visible = IsWindowVisible(tray).as_bool();
+        let mut band = RECT::default();
+        if GetWindowRect(tray, &mut band).is_err() {
+            return true;
+        }
+        taskbar_present(visible, band, monitor)
+    }
+}
+
+/// 保活 tick（仅主线程执行，由保活线程每 250ms 派发）。
+///
+/// 职责（全部低开销）：
+///   1) 挂件 HWND 失效 → 节流重建（自愈）；
+///   2) 任务栏不在位（全屏 / 自动隐藏）→ 主动隐藏挂件，任务栏回来后再显示；
+///   3) `WindowFromPoint(挂件中心)` 命中测试，**只在真被别的窗口盖住时**才重置顶；
+///   4) WebView2 假死自愈：前端 ack 超时 → reload 前端。
+/// 点任务栏后挂件的恢复延迟因此从"轮询周期 2s"降到 250ms 级，且空闲时不发任何 SetWindowPos。
+#[cfg(windows)]
+fn mini_keepalive_tick(app: &AppHandle) {
+    // 两次重置顶的最小间隔：命中测试有抖动时也不至于一直抢 z-order
+    const MIN_REASSERT_MS: u64 = 600;
+    // 前端 ack 超过该秒数即判定渲染进程假死（最小轮询 10s，3 个周期足够宽裕）
+    const ACK_STALE_SECS: u64 = 30;
+    // 同一窗口两次 reload 的最小间隔，避免连续重载
+    const RELOAD_THROTTLE_SECS: u64 = 30;
+    static LAST_ASSERT_MS: AtomicU64 = AtomicU64::new(0);
+    static LAST_RELOAD_MAIN: AtomicU64 = AtomicU64::new(0);
+    static LAST_RELOAD_MINI: AtomicU64 = AtomicU64::new(0);
+
+    let st = app.state::<AppState>();
+    let s = st.settings.lock().map(|g| g.clone()).unwrap_or_default();
+
+    // ① WebView2 假死自愈：只对"正在显示"的窗口做，避免重载看不见的窗口
+    maybe_reload_stale(app, "main", true, ACK_STALE_SECS, RELOAD_THROTTLE_SECS, &LAST_RELOAD_MAIN);
+    maybe_reload_stale(app, "mini", s.mini_enabled, ACK_STALE_SECS, RELOAD_THROTTLE_SECS, &LAST_RELOAD_MINI);
+
+    let Some(win) = app.get_webview_window("mini") else { return };
+    let Ok(h) = win.hwnd() else { return };
+    let hwnd = HWND(h.0);
+    if !unsafe { IsWindow(Some(hwnd)).as_bool() } {
+        watch_diag(&WatchInfo {
+            alive: false, occluded: false, cloaked: false, topmost: false, occluded_by: None, ack_age: -1,
+        });
+        try_rebuild_mini(app);
+        return;
+    }
+    if !s.mini_enabled {
+        return; // 显隐由 position_mini / save_settings 负责，别跟它抢
+    }
+    // ② 任务栏不在位（全屏应用藏了它 / 自动隐藏收成一条）：主动隐藏挂件，任务栏回来再显示
+    if !mini_should_show(s.mini_enabled, mini_taskbar_present(&win), is_suspended("mini")) {
+        let _ = win.hide();
+        return;
+    }
+
+    let mut r = RECT::default();
+    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() || r.right <= r.left {
+        return;
+    }
+    let visible = unsafe { IsWindowVisible(hwnd).as_bool() };
+    let cloaked = window_cloaked(hwnd).map(is_cloaked_flags).unwrap_or(false);
+    let topmost = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 != 0 };
+    // 命中挂件中心的窗口取 GA_ROOT 后与挂件比对
+    // （WebView2 在窗口内部还有一层子 HWND，直接比 hwnd 会永远"被遮挡"）
+    let center = POINT { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
+    let hit = unsafe { WindowFromPoint(center) };
+    let root = unsafe { GetAncestor(hit, GA_ROOT) };
+    let occluded = visible && root != hwnd;
+    // ③ 只在意真被别的窗口盖住时重置顶（限频），空闲时一次 SetWindowPos 都不发
+    if occluded {
+        let now = unsafe { GetTickCount64() };
+        if now.saturating_sub(LAST_ASSERT_MS.load(Ordering::Relaxed)) >= MIN_REASSERT_MS {
+            LAST_ASSERT_MS.store(now, Ordering::Relaxed);
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    Some(HWND_TOPMOST),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
+    watch_diag(&WatchInfo {
+        alive: true,
+        occluded,
+        cloaked,
+        topmost,
+        occluded_by: if occluded { Some(root.0 as isize) } else { None },
+        ack_age: ack_age_secs("mini"),
+    });
 }
 
 /// 挂件窗口句柄失效后的自愈：重建同名 "mini" 窗口，前端加载后走
@@ -1128,6 +1508,16 @@ fn position_mini(app: &AppHandle, state: &State<AppState>) {
         return;
     }
     let Some(info) = taskbar_band() else { return };
+
+    // 任务栏不在位（全屏应用藏了它 / 自动隐藏收成一条）：主动隐藏挂件，避免浮在全屏应用之上。
+    // 任务栏回来后，后续 position_mini 会重新显示（apply_mini_layout 带 SWP_SHOWWINDOW）。
+    if !mini_taskbar_present(&win) {
+        let win2 = win.clone();
+        let _ = app.run_on_main_thread(move || {
+            let _ = win2.hide();
+        });
+        return;
+    }
 
     // 注意：不能用 outer_size()==0 作为放弃条件——窗口从未 show 过时 tao 侧
     // 尺寸可能尚未回填（前端 set_window_size 未到达），直接 abort 会造成
@@ -1202,67 +1592,6 @@ fn apply_mini_layout(win: &tauri::WebviewWindow, x: i32, y: i32, enabled: bool) 
     let _ = win.show();
 }
 
-/// 保活 tick（仅主线程执行，由保活线程每 250ms 派发）。
-///
-/// 只做两件低开销、无副作用的事：
-///   1) 挂件 HWND 失效 → 节流重建（自愈）；
-///   2) `WindowFromPoint(挂件中心)` 命中测试，**只在真被别的窗口盖住时**才重置顶。
-/// 点任务栏后挂件的恢复延迟因此从"轮询周期 2s"降到 250ms 级（v0.4.6 的实测问题），
-/// 而且空闲时一次 SetWindowPos 都不发 —— 不给主线程制造 z-order churn。
-#[cfg(windows)]
-fn mini_keepalive_tick(app: &AppHandle) {
-    // 两次重置顶的最小间隔：命中测试有抖动时也不至于一直抢 z-order
-    const MIN_REASSERT_MS: u64 = 600;
-    static LAST_ASSERT_MS: AtomicU64 = AtomicU64::new(0);
-
-    let st = app.state::<AppState>();
-    let s = st.settings.lock().map(|g| g.clone()).unwrap_or_default();
-    let Some(win) = app.get_webview_window("mini") else {
-        return;
-    };
-    let Ok(h) = win.hwnd() else { return };
-    let hwnd = HWND(h.0);
-    if !unsafe { IsWindow(Some(hwnd)).as_bool() } {
-        watch_diag(false, false);
-        try_rebuild_mini(app);
-        return;
-    }
-    if !s.mini_enabled {
-        return; // 显隐由 position_mini / save_settings 负责，别跟它抢
-    }
-    // 命中挂件中心的窗口取 GA_ROOT 后与挂件比对
-    // （WebView2 在窗口内部还有一层子 HWND，直接比 hwnd 会永远"被遮挡"）
-    let mut r = RECT::default();
-    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() || r.right <= r.left {
-        return;
-    }
-    let visible = unsafe { IsWindowVisible(hwnd).as_bool() };
-    let center = POINT {
-        x: (r.left + r.right) / 2,
-        y: (r.top + r.bottom) / 2,
-    };
-    let hit = unsafe { WindowFromPoint(center) };
-    let ours = unsafe { GetAncestor(hit, GA_ROOT) } == hwnd;
-    if visible && !ours {
-        let now = unsafe { GetTickCount64() };
-        if now.saturating_sub(LAST_ASSERT_MS.load(Ordering::Relaxed)) >= MIN_REASSERT_MS {
-            LAST_ASSERT_MS.store(now, Ordering::Relaxed);
-            unsafe {
-                let _ = SetWindowPos(
-                    hwnd,
-                    Some(HWND_TOPMOST),
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                );
-            }
-        }
-    }
-    watch_diag(true, visible && !ours);
-}
-
 #[cfg(not(windows))]
 fn position_mini(app: &AppHandle, _state: &State<AppState>) {
     if let Some(win) = app.get_webview_window("mini") {
@@ -1270,29 +1599,151 @@ fn position_mini(app: &AppHandle, _state: &State<AppState>) {
     }
 }
 
-/// 虚拟桌面修复：切换桌面后窗口只是被 shell "cloaked" 在旧桌面上（WS_VISIBLE 仍在，
-/// 所以 IsWindowVisible 为真、show() 是 no-op）。隐藏再显示会让 shell 把窗口重新
-/// 归入当前桌面；用 SW_SHOWNA 避免抢焦点。
+/// 窗口是否被 DWM cloak（"名义可见但实际不渲染"的权威判据）。
+/// 返回 `None` 表示查询失败（状态未知，调用方应保持不动）。
 #[cfg(windows)]
-fn ensure_on_current_desktop(hwnd: HWND) {
+fn window_cloaked(hwnd: HWND) -> Option<u32> {
+    let mut flags: u32 = 0;
+    let hr = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            &mut flags as *mut u32 as *mut core::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    hr.ok().map(|_| flags)
+}
+
+/// DWMWA_CLOAKED 返回值 -> 是否被 cloak（非 0 即真）。纯函数，便于单测。
+/// 同时覆盖 APP(1) 应用自身 / SHELL(2) 虚拟桌面切换 / INHERITED(4) 全屏等继承成因。
+#[cfg(windows)]
+fn is_cloaked_flags(flags: u32) -> bool {
+    flags != 0
+}
+
+/// 任务栏是否"在位可落位"：`visible` = `IsWindowVisible(Shell_TrayWnd)`；
+/// `band` / `monitor` 均为物理像素矩形。纯函数，便于单测。
+///
+/// 全屏应用会把任务栏整体藏起来（visible=false）；自动隐藏会把任务栏收成贴边的一条
+/// （Win32 矩形退化并可能退到屏幕外）——两者都判为"不在位"，此时挂件应主动隐藏，
+/// 否则会浮在全屏应用之上。
+#[cfg(windows)]
+fn taskbar_present(visible: bool, band: RECT, monitor: RECT) -> bool {
+    if !visible {
+        return false;
+    }
+    if band.right - band.left <= 8 || band.bottom - band.top <= 8 {
+        return false;
+    }
+    band.right > monitor.left
+        && band.left < monitor.right
+        && band.bottom > monitor.top
+        && band.top < monitor.bottom
+}
+
+/// 任务栏挂件最终是否应显示：设置启用 + 任务栏在位 + 未被 reconcile 因全屏暂停。纯函数。
+#[cfg(windows)]
+fn mini_should_show(enabled: bool, taskbar_present: bool, suspended: bool) -> bool {
+    enabled && taskbar_present && !suspended
+}
+
+/// reconcile_window 置位的"因全屏等 cloak 成因被本进程主动隐藏"标记（按窗口 label），
+/// cloak 解除后据此恢复显示。用原子量避免与主线程争锁。
+#[cfg(windows)]
+static MAIN_SUSPENDED: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static MINI_SUSPENDED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
+fn suspended_flag(label: &str) -> &'static AtomicBool {
+    if label == "mini" { &MINI_SUSPENDED } else { &MAIN_SUSPENDED }
+}
+
+#[cfg(windows)]
+fn is_suspended(label: &str) -> bool {
+    suspended_flag(label).load(Ordering::Relaxed)
+}
+
+#[cfg(windows)]
+fn set_suspended(label: &str, v: bool) {
+    suspended_flag(label).store(v, Ordering::Relaxed);
+}
+
+/// 窗口是否在当前虚拟桌面上；查询失败返回 `None`（状态未知，调用方不动）。
+#[cfg(windows)]
+fn on_current_virtual_desktop(hwnd: HWND) -> Option<bool> {
     unsafe {
         let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
         let inited = hr == S_OK || hr == S_FALSE; // CHANGED_MODE 时不能配对 CoUninitialize
-        if inited || hr == RPC_E_CHANGED_MODE {
-            let mgr: windows::core::Result<IVirtualDesktopManager> =
-                CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_INPROC_SERVER);
-            if let Ok(mgr) = mgr {
-                // 对未归位/隐藏窗口会返回 Err——视为"状态未知"，不动
-                if let Ok(on_cur) = mgr.IsWindowOnCurrentVirtualDesktop(hwnd) {
-                    if !on_cur.as_bool() {
-                        let _ = ShowWindow(hwnd, SW_HIDE);
-                        let _ = ShowWindow(hwnd, SW_SHOWNA);
-                    }
-                }
+        if !(inited || hr == RPC_E_CHANGED_MODE) {
+            return None;
+        }
+        let mgr: windows::core::Result<IVirtualDesktopManager> =
+            CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_INPROC_SERVER);
+        let res = mgr
+            .ok()
+            .and_then(|m| m.IsWindowOnCurrentVirtualDesktop(hwnd).ok())
+            .map(|b| b.as_bool());
+        if inited {
+            CoUninitialize();
+        }
+        res
+    }
+}
+
+/// 统一 cloak 修复：以 `DWMWA_CLOAKED` 为权威判据（同时覆盖虚拟桌面与全屏成因）。
+///
+/// - 未 cloak：若此前因全屏被我们藏起来过，恢复显示；
+/// - cloak 且【不在当前虚拟桌面】：hide + SW_SHOWNA 重挂到当前桌面，不置 SUSPENDED；
+/// - cloak 且【在当前桌面】（其它成因，如全屏应用）：主动隐藏并置 SUSPENDED，解除后恢复；
+/// - 查询失败 / 用户主动隐藏（不可见且非我们 suspend 的）：不动。
+///
+/// 【线程纪律】本函数含 ShowWindow，必须只在主线程调用（经 run_on_main_thread 派发）。
+#[cfg(windows)]
+fn reconcile_window(app: &AppHandle, label: &str) {
+    let Some(w) = app.get_webview_window(label) else { return };
+    let Ok(h) = w.hwnd() else { return };
+    let hwnd = HWND(h.0);
+    if !unsafe { IsWindow(Some(hwnd)).as_bool() } {
+        return;
+    }
+    let suspended = is_suspended(label);
+    // 用户主动隐藏的窗口（不可见且不是我们 suspend 的）保持隐藏，绝不误显示
+    if !unsafe { IsWindowVisible(hwnd).as_bool() } && !suspended {
+        return;
+    }
+    let Some(flags) = window_cloaked(hwnd) else {
+        return; // 查询失败：状态未知，保持不动
+    };
+    if !is_cloaked_flags(flags) {
+        // cloak 解除：若之前是我们藏的，放出来
+        if suspended {
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_SHOWNA);
             }
-            if inited {
-                CoUninitialize();
+            set_suspended(label, false);
+        }
+        return;
+    }
+    match on_current_virtual_desktop(hwnd) {
+        Some(false) => {
+            // 在别的虚拟桌面：hide + show 让 shell 把它重新归入当前桌面（SW_SHOWNA 不抢焦点）
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_HIDE);
+                let _ = ShowWindow(hwnd, SW_SHOWNA);
             }
+            set_suspended(label, false);
+        }
+        Some(true) => {
+            // 其它成因（全屏等）：主动隐藏，等 cloak 解除后恢复
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_HIDE);
+            }
+            set_suspended(label, true);
+        }
+        None => {
+            // 状态未知：不动，避免误藏
         }
     }
 }
@@ -1380,6 +1831,8 @@ fn save_settings(app: AppHandle, s: settings::Settings, state: State<AppState>) 
     // 任务栏挂件随设置显隐/换位
     #[cfg(windows)]
     position_mini(&app, &state);
+    // 设置里改动（如任务栏挂件开关）后，托盘菜单勾选态同步
+    sync_tray_menu(&app);
     // 界面语言切换：托盘菜单与设置窗口标题即时重译（悬浮窗由前端响应 settings 事件重挂载）
     if lang_changed {
         apply_lang(&app, &s.lang);
@@ -1431,13 +1884,37 @@ fn draw_tray(remaining: Option<f64>) -> tauri::image::Image<'static> {
 
 fn update_tray(app: &AppHandle, remaining: Option<f64>) {
     let state = app.state::<TrayState>();
-    let tray = match state.0.lock() {
+    let tray = match state.tray.lock() {
         Ok(g) => g.clone(),
         Err(_) => None,
     };
     if let Some(t) = tray {
         let _ = t.set_icon(Some(draw_tray(remaining)));
     }
+}
+
+/// 从用量结果算出托盘血条剩余%（主/副窗口取有值者）
+fn remaining_percent(u: &datasource::Usage) -> Option<f64> {
+    if u.ok {
+        u.primary
+            .used_percent
+            .or(u.secondary.used_percent)
+            .map(|used| (100.0 - used).clamp(0.0, 100.0))
+    } else {
+        None
+    }
+}
+
+/// 手动刷新（托盘“立即刷新”）：把阻塞的 `fetch_all` 丢到后台线程，避免卡住 UI 线程。
+/// 点击瞬间先把菜单改成“刷新中…”作为反馈，取数完成后再发事件、重绘托盘、还原文案。
+fn spawn_refresh(app: AppHandle) {
+    set_refreshing(&app, true);
+    thread::spawn(move || {
+        let u = datasource::fetch_all();
+        update_tray(&app, remaining_percent(&u));
+        let _ = app.emit("usage", &u);
+        set_refreshing(&app, false);
+    });
 }
 
 /// 诊断：打印任务栏带、各来源占位矩形（系统子窗口/第三方顶层窗/UIA 元素）与空闲区间，
@@ -1583,5 +2060,121 @@ fn dump_uia_names(tray: HWND, band: RECT) {
                 CoUninitialize();
             }
         }
+    }
+}
+
+/// 从 mini-diag.log 的 `watch` 行反推"最后一次 ack 时间戳"。
+/// `--probe-mini` 是独立进程，读不到运行中应用里的原子量，只能从日志反推：
+/// 该行记录的时间 `t` 减去当时的 `ack_age` 即为最后一次 ack 的近似时刻。
+#[cfg(windows)]
+fn read_last_ack_ts() -> Option<u64> {
+    let text = std::fs::read_to_string(settings::config_path().with_file_name("mini-diag.log")).ok()?;
+    for line in text.lines().rev() {
+        if !line.starts_with("watch ") {
+            continue;
+        }
+        let t = line
+            .split_whitespace()
+            .find_map(|kv| kv.strip_prefix("t=")?.parse::<u64>().ok());
+        let age = line
+            .split_whitespace()
+            .find_map(|kv| kv.strip_prefix("ack_age=")?.parse::<i64>().ok());
+        if let (Some(t), Some(age)) = (t, age) {
+            return Some((t as i64 - age).max(0) as u64);
+        }
+    }
+    None
+}
+
+/// 诊断：打印任务栏挂件窗口的一手状态（`--probe-mini [hwnd]`）。
+/// 缺省 hwnd 时按窗口标题 "GPT-HP-BAR 任务栏" 查找（应用在跑时才存在）。
+/// 打印：IsWindowVisible / DWMWA_CLOAKED / GWL_EXSTYLE & WS_EX_TOPMOST /
+///       GetWindowRect / WindowFromPoint(中心)+GA_ROOT 比对 / 最后 ack 时间戳。
+/// 异地机器看不到画面时，本命令 + mini-diag.log 是唯一的一手证据。
+#[cfg(windows)]
+fn mini_probe(arg: Option<isize>) {
+    unsafe {
+        let hwnd = match arg {
+            Some(a) => HWND(a as *mut core::ffi::c_void),
+            None => match FindWindowW(None, w!("GPT-HP-BAR 任务栏")) {
+                Ok(h) => h,
+                Err(_) => {
+                    println!("未找到挂件窗口（可传入 hwnd，或先启动应用）：FindWindowW(\"GPT-HP-BAR 任务栏\") 失败");
+                    return;
+                }
+            },
+        };
+        if !IsWindow(Some(hwnd)).as_bool() {
+            println!("hwnd {hwnd:?} 无效");
+            return;
+        }
+        let visible = IsWindowVisible(hwnd).as_bool();
+        let cloaked_flags = window_cloaked(hwnd);
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        let topmost = ex & WS_EX_TOPMOST.0 != 0;
+        println!("hwnd = {hwnd:?}");
+        println!("IsWindowVisible = {visible}");
+        match cloaked_flags {
+            Some(f) => println!("DWMWA_CLOAKED = {f} (cloaked={})", is_cloaked_flags(f)),
+            None => println!("DWMWA_CLOAKED = query-failed"),
+        }
+        println!("GWL_EXSTYLE = 0x{ex:08x} WS_EX_TOPMOST = {topmost}");
+        let mut r = RECT::default();
+        if GetWindowRect(hwnd, &mut r).is_ok() {
+            println!("GetWindowRect = ({},{})-({},{})", r.left, r.top, r.right, r.bottom);
+            let center = POINT { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
+            let hit = WindowFromPoint(center);
+            let root = GetAncestor(hit, GA_ROOT);
+            println!(
+                "WindowFromPoint(center) = {hit:?} GA_ROOT = {root:?} ours = {}",
+                root == hwnd
+            );
+        } else {
+            println!("GetWindowRect failed");
+        }
+        match read_last_ack_ts() {
+            Some(ts) => println!("last_ack = {ts} (age={}s)", now_secs().saturating_sub(ts)),
+            None => println!("last_ack = n/a（mini-diag.log 无 ack 记录）"),
+        }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::{is_cloaked_flags, mini_should_show, taskbar_present};
+    use windows::Win32::Foundation::RECT;
+
+    fn rect(l: i32, t: i32, r: i32, b: i32) -> RECT {
+        RECT { left: l, top: t, right: r, bottom: b }
+    }
+
+    #[test]
+    fn cloaked_flags_nonzero_is_cloaked() {
+        assert!(!is_cloaked_flags(0));
+        assert!(is_cloaked_flags(1)); // DWM_CLOAKED_APP
+        assert!(is_cloaked_flags(2)); // DWM_CLOAKED_SHELL（虚拟桌面切换）
+        assert!(is_cloaked_flags(4)); // DWM_CLOAKED_INHERITED（全屏等）
+        assert!(is_cloaked_flags(6));
+    }
+
+    #[test]
+    fn taskbar_present_rules() {
+        let mon = rect(0, 0, 2560, 1440);
+        // 全屏应用把任务栏藏了：IsWindowVisible = false
+        assert!(!taskbar_present(false, rect(0, 1392, 2560, 1440), mon));
+        // 自动隐藏：收成贴边一条（高度退化）
+        assert!(!taskbar_present(true, rect(0, 1438, 2560, 1440), mon));
+        // 退到屏幕外（与显示器无交集）
+        assert!(!taskbar_present(true, rect(0, 1600, 2560, 1640), mon));
+        // 正常在位
+        assert!(taskbar_present(true, rect(0, 1392, 2560, 1440), mon));
+    }
+
+    #[test]
+    fn mini_show_rules() {
+        assert!(mini_should_show(true, true, false));
+        assert!(!mini_should_show(false, true, false)); // 设置里关掉
+        assert!(!mini_should_show(true, false, false)); // 任务栏不在位
+        assert!(!mini_should_show(true, true, true)); // 被全屏暂停
     }
 }

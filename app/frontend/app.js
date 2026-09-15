@@ -4,6 +4,11 @@ const { listen } = window.__TAURI__.event;
 
 const $ = (s) => document.querySelector(s);
 
+// 心跳：渲染进程每次 render 后 + 每 5s 上报一次。Rust 保活线程据此判断 WebView2
+// 渲染进程是否假死（transparent 窗口的渲染进程一旦被终止，窗口会变成全透明"消失"），
+// 超时则 reload 本窗口前端自愈。上报失败静默忽略，绝不影响渲染。
+function alivePing() { invoke('alive_ping', { label: 'main' }).catch(() => {}); }
+
 // 悬浮窗是常驻小挂件，不需要 WebView2 的默认右键菜单（刷新/另存为/检查…）。
 // 捕获阶段拦一层，避免皮肤内部代码在冒泡阶段吃掉事件后菜单照样弹出。
 document.addEventListener('contextmenu', (e) => { e.preventDefault(); }, true);
@@ -199,6 +204,7 @@ async function mountSkin() {
 
   if (usage) sk.update(root.firstElementChild, usage, appSettings);
   await applySize();
+  alivePing();
 }
 
 function applySize() {
@@ -212,6 +218,7 @@ function render(u) {
   const sk = window.SKINS[skinId()];
   const rootEl = document.querySelector('#root > *');
   if (sk && rootEl) sk.update(rootEl, u, appSettings);
+  alivePing();
 }
 
 function applySettings(s) {
@@ -232,3 +239,4 @@ listen('usage', (e) => render(e.payload));
 listen('settings', (e) => applySettings(e.payload));
 invoke('refresh_now').then(render).catch(() => render({ ok: false, source: 'none' }));
 invoke('get_settings').then(applySettings).catch(() => {});
+setInterval(alivePing, 5000);

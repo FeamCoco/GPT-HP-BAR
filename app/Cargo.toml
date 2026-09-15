@@ -4,13 +4,16 @@ version = "0.5.0"
 description = "Codex 剩余额度：悬浮窗 + 任务栏常驻工具"
 license = "MIT"
 edition = "2021"
-rust-version = "1.77"
+# tauri-plugin-single-instance 要求至少 1.77.2（见 v2 官方文档 Setup 节）
+rust-version = "1.77.2"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# 单实例守卫：双击第二次只唤起既有实例，避免两个托盘图标/两组窗口互抢任务栏位置
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
@@ -18,7 +21,7 @@ toml = "0.8"
 winreg = "0.55"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Shell", "Win32_UI_HiDpi", "Win32_System_Com", "Win32_Globalization"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Shell", "Win32_UI_HiDpi", "Win32_System_Com", "Win32_Globalization", "Win32_Graphics_Dwm"] }
 
 [profile.release]
 strip = true
