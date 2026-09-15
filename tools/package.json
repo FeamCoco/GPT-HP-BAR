@@ -8,8 +8,5 @@
   },
   "devDependencies": {
     "linkedom": "^0.18.13"
-  },
-  "dependencies": {
-    "gpt-hp-bar-tools": "file:"
   }
 }

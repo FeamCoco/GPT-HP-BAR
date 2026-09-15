@@ -37,13 +37,13 @@ jobs:
         with:
           node-version: "22"
 
-      # tools/package-lock.json 的 resolved 指向 repo.huaweicloud.com 镜像，境外 runner 可能不可达。
-      # 强制官方 registry（--replace-registry-host=always 才能覆盖 lock 里的镜像 host），
-      # 并在 npm ci 失败时退化为 npm install —— 保证镜像不可达时也能装好依赖。
+      # tools/package-lock.json 已用官方 registry 重生成（所有 resolved 均指向 registry.npmjs.org），
+      # 不再需要任何 host 替换参数。CI 是干净环境、无 .npmrc，默认就走官方 registry；
+      # 保留 `|| npm install` 只为兜住 lock 与 package.json 万一再次不同步的情况。
       - name: Install tools deps
         working-directory: tools
         shell: bash
-        run: npm ci --registry=https://registry.npmjs.org/ --replace-registry-host=always || npm install --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=always
+        run: npm ci || npm install --no-audit --no-fund
 
       - name: Verify motion & skins
         working-directory: tools
