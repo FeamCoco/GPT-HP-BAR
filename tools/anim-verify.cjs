@@ -7,7 +7,9 @@
  * app/frontend 下真实的运行时文件，逐套皮肤断言：
  *   ① 变化确实在"补间"：出现过既不是起点、也不是终点的中间帧；
  *   ② 终值精确：补间跑完后与"直接赋目标值"的状态逐字节一致；
- *   ③ 不抛异常，含两条边界路径（中途换目标 / 无数据往返）。
+ *   ③ 不抛异常，含两条边界路径（中途换目标 / 无数据往返）；
+ *   ④ 无 5h 额度（Pro 5x/20x 只有周额度）：主行换成周剩余、周行不再重复、
+ *      从 Plus 形态切过来要收敛到同一状态，挂件同样读周剩余。
  * 另外统计 8 个一次性动效签名各自被触发多少次 —— 这是"每套皮肤都接上了"的证据。
  *
  * 用法：
@@ -172,11 +174,73 @@ for (const id of SKINS) {
   rows.push(runCase(id, 'mini'));
 }
 
+/* ---------- 无 5h 额度：Pro 5x / 20x 只有周额度 ------------------------------
+ * 真实形态：Rust 侧 normalize_windows 已经把那个周窗口放进 primary、secondary
+ * 置空、has_5h=false（详见 datasource.rs 的 infer_has_5h）。前端要做到：
+ *   ① 主行换成周剩余，不再顶着"5h 窗口"的名头显示周数字；
+ *   ② 「周」那一行不再重复出现；
+ *   ③ 从 Plus 形态（两行都在）切过来时收敛到与"直接挂载 Pro"完全一致的状态 ——
+ *      这条最要紧：账号换档时残留一行空数字比一开始就少一行更糟。
+ * 行显隐在皮肤里是写 inline style.display，所以这里直读它，不看计算样式。 */
+const PRO_PAYLOAD = (rem) => ({
+  ok: true, source: 'verify', plan: 'pro', email: 'a@b.c', credits: { unlimited: false, balance: 1.25 },
+  has_5h: false,
+  primary: { used_percent: 100 - rem, window_minutes: 10080, kind: 'weekly', resets_in_seconds: 99999 },
+  secondary: { used_percent: null, window_minutes: null, resets_in_seconds: null, kind: null },
+});
+
+// 每套皮肤：主数字 / 周行 / 主行标签 的选择器，以及无 5h 时该看到的标签文案
+const NO_5H = {
+  hero:    { main: '.n5',    weekRow: '.wk',     label: '.wl',      labelText: '本周' },
+  glass:   { main: '.n5',    weekRow: '.week',   label: null,       labelText: null },
+  term:    { main: '.n5',    weekRow: '.wk-row', label: '.line .k', labelText: '周' },
+  card:    { main: '.n5',    weekRow: '.wk-row', label: '.row .k',  labelText: '本周' },
+  tile:    { main: '.nv',    weekRow: null,      label: null,       labelText: null },
+  battery: { main: '.num',   weekRow: '.wk',     label: '.wl',      labelText: '本周' },
+  gauge:   { main: '.num',   weekRow: '.wk',     label: '.cap',     labelText: 'CODEX 周剩余' },
+  neon:    { main: '.n-num', weekRow: '.n-wkw',  label: null,       labelText: null },
+  liquid:  { main: '.l-num', weekRow: null,      label: null,       labelText: null },
+  pixel:   { main: '.p-hp',  weekRow: '.p-wkw',  label: null,       labelText: null },
+};
+
+let cases5h = 0;
+function runCaseNo5h(id) {
+  const C = NO_5H[id];
+  const tag = id + ' · 无5h额度';
+  const txt = (el, sel) => { const n = sel && el.querySelector(sel); return n ? (n.textContent || '').trim() : null; };
+  const disp = (el, sel) => { const n = sel && el.querySelector(sel); return n ? (n.style.display || '') : '(缺元素)'; };
+
+  const A = mount(id, 'main');
+  run(A, 87);                                   // 先渲染成 Plus 形态（5h 主行 + 周行都在）
+  frames(2);
+  try { A.sk.update(A.el, PRO_PAYLOAD(61), SETTINGS); } catch (e) { fails.push(tag + ' 抛异常：' + e.message); }
+  frames(30);
+  cases5h++;
+
+  check(String(txt(A.el, C.main)).indexOf('61') >= 0,
+    tag + '：主行显示周剩余（' + C.main + ' = ' + txt(A.el, C.main) + '）');
+  if (C.weekRow) check(disp(A.el, C.weekRow) === 'none', tag + '：周行不再重复出现（' + C.weekRow + '）');
+  if (C.label) check(txt(A.el, C.label) === C.labelText,
+    tag + '：主行标签改为「' + C.labelText + '」（实际 ' + txt(A.el, C.label) + '）');
+
+  const B = mount(id, 'main');
+  try { B.sk.update(B.el, PRO_PAYLOAD(61), SETTINGS); } catch (e) { fails.push(tag + ' 抛异常：' + e.message); }
+  frames(30);
+  check(fingerprint(A.el) === fingerprint(B.el), tag + '：从 Plus 切过来与直接挂载结果一致');
+
+  const M = mount(id, 'mini');
+  try { M.sk.updateMini(M.el, PRO_PAYLOAD(61), SETTINGS); } catch (e) { fails.push(tag + ' 抛异常：' + e.message); }
+  frames(30);
+  check(String(txt(M.el, '.m-num')).indexOf('61') >= 0, tag + '：挂件同样显示周剩余');
+}
+for (const id of SKINS) if (SKINSREG[id]) runCaseNo5h(id);
+
 const sigs = Object.keys(HP.FX);
 const usedSigs = Object.keys(fxUse);
 
 const L = [];
 L.push('用例：' + rows.length + ' 个（10 套皮肤 × 主形态 + 挂件形态） · 断言：' + (pass + fails.length));
+L.push('      + 无 5h 额度（Pro 周额度）' + cases5h + ' 个用例');
 L.push('结果：通过 ' + pass + ' · 失败 ' + fails.length);
 L.push('');
 L.push('皮肤            主形态状态段数   挂件状态段数');

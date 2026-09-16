@@ -5,6 +5,7 @@ Your Codex quota, rendered as an HP bar pinned to your Windows desktop and taskb
 [简体中文](README.md) | **English**
 
 > Live view of your Codex 5-hour window / weekly window / credits (Codex CLI and the ChatGPT desktop app share the same account pool).
+> Plan-aware: **only Plus carries a 5-hour window** — Pro 5x/20x are weekly-only, and the main row switches to "Week" accordingly.
 > Two forms: a floating desktop widget and a taskbar widget, with 10 switchable themes. Runs 100% locally.
 
 <p>
@@ -19,6 +20,7 @@ Your Codex quota, rendered as an HP bar pinned to your Windows desktop and taskb
 - **10 themes, one click away** — the settings panel renders live previews with each theme's real markup and styles (no more switching back and forth); click a card to apply instantly
 - **Smart taskbar avoidance** — works on Windows 10 and 11: keeps clear of the tray area, Start button and pinned app icons (read via UI Automation, since the real icon positions aren't exposed by legacy window structures on modern Win11); coexists with third-party taskbar widgets like TrafficMonitor; re-docks within 2 seconds as the icon group grows or shrinks; slides to the nearest free spot on conflict
 - **Appearance** — font scale 80–150%, window opacity, accent color (follow the 3-tier quota state, or fixed green/amber/cyan), four content toggles (weekly / credits / reset countdown / email); every change applies live
+- **Window kind detected by duration, not by slot** — never treats `primary`/`secondary` as "5-hour / weekly". With a 5-hour window present the main row is the 5-hour one; when there is **no 5-hour limit** (Pro 5x/20x, API-key mode, or the Jul 12 – Aug 25 2026 suspension), the main row becomes "Week" with the weekly reset countdown and the duplicate row disappears. If the source reports no window length at all, it keeps the legacy assumption instead of guessing
 - **Tray integration** — tray icon tinted by remaining quota (green >50% / amber >20% / red ≤20%), menu for show/settings/refresh/exit
 - **Auto start** — per-user registry (HKCU), no admin rights needed
 
@@ -37,7 +39,8 @@ Sources are probed in priority order with automatic fallback:
 3. **Relay / third-party providers** — probes a wham/usage-compatible endpoint at the `base_url` of the `model_provider` in Codex's `config.toml`
 
 - Run `codex login` once and real quota shows up; otherwise the widget says "no data source"
-- Tolerates both `rate_limit` / `rate_limits` spellings and `additional_rate_limits[]`
+- Tolerates both `rate_limit` / `rate_limits` spellings and `additional_rate_limits[]`; window length is read from either `limit_window_seconds` (REST) or `window_minutes` (app-server)
+- Window kinds are derived from window length; `--probe` prints `has_5h` plus each window's `kind`, so you can see at a glance whether the account has a 5-hour window at all
 - Troubleshooting: `gpt-hp-bar.exe --probe` (prints probe results, never prints secrets)
 
 **Privacy**: everything runs on your machine. The token is only used in-memory for local queries. No telemetry, nothing leaves your computer.

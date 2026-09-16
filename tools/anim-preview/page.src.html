@@ -96,6 +96,8 @@
     数值补间由 <code>HP.tween</code> 逐帧驱动，条 / 液面 / 弧长 / 指针 / 数字共用一个 620ms 时钟；
     变化瞬间再叠一层 <code>HP.fx</code> 的一次性动效 —— 拖滑杆看大跳变，按「+1%」看小变化：
     <b>后者才是实际使用中最常发生的情况</b>（一次轮询通常只动 1%）。
+    右下角的「账号档位」勾选框切到 <b>Pro</b>：Pro 5x/20x 没有 5h 额度，主行会变成<b>周剩余</b>
+    并收起原来那行周 —— 十套皮肤与挂件都要跟着变（判定逻辑在 <code>datasource.rs</code>）。
   </div>
 
   <div class="pv-ctl">
@@ -113,6 +115,8 @@
     <span class="pv-sep"></span>
     <label><input id="pv-auto" type="checkbox" checked> 自动轮播</label>
     <label><input id="pv-mini" type="checkbox" checked> 显示挂件形态</label>
+    <span class="pv-sep"></span>
+    <label><input id="pv-pro" type="checkbox"> 账号档位：Pro（仅周额度）</label>
   </div>
 
   <div class="pv-grid" id="pv-grid"></div>
@@ -173,15 +177,34 @@
   const ORDER = ['hero', 'glass', 'term', 'card', 'tile', 'battery', 'gauge', 'neon', 'liquid', 'pixel'];
 
   // 剩余 rem% -> 与 Rust 侧 usage 同构的载荷（HP.rem(used) = 100 - used）
+  //
+  // 两个档位（勾选框切换）：
+  //   Plus：5h + 周两个窗口，primary=5h、secondary=周（沿用多年的形态）
+  //   Pro ：5x / 20x 只有周额度 —— Rust 侧 normalize_windows 会把那个周窗口放进
+  //         primary、secondary 置空、has_5h=false；前端据此把主行标签改成「本周」
+  //         并收起原来那行周。十套皮肤 + 挂件都要对，这个开关就是给人眼看这条链路的。
+  const proBox = document.getElementById('pv-pro');
+  const isPro = () => !!(proBox && proBox.checked);
+
   function payload(rem) {
     if (rem == null) return { ok: false, source: 'none', error: 'preview: no data source' };
     const u = (r) => ({ used_percent: Math.max(0, Math.min(100, 100 - r)) });
-    return {
-      ok: true, source: 'preview', plan: 'plus', email: 'demo.user@example.com',
+    const base = {
+      ok: true, source: 'preview', email: 'demo.user@example.com',
       credits: { unlimited: false, balance: 12.4 },
-      primary: Object.assign(u(rem), { window_minutes: 300, resets_in_seconds: 3 * 3600 + 54 * 60 }),
-      secondary: Object.assign(u(rem * 0.82 + 4), { window_minutes: 10080, resets_in_seconds: 2 * 86400 + 5 * 3600 }),
     };
+    if (isPro()) {
+      return Object.assign(base, {
+        plan: 'pro', has_5h: false,
+        primary: Object.assign(u(rem), { window_minutes: 10080, kind: 'weekly', resets_in_seconds: 2 * 86400 + 5 * 3600 }),
+        secondary: { used_percent: null, window_minutes: null, resets_in_seconds: null, kind: null },
+      });
+    }
+    return Object.assign(base, {
+      plan: 'plus', has_5h: true,
+      primary: Object.assign(u(rem), { window_minutes: 300, kind: 'five_hour', resets_in_seconds: 3 * 3600 + 54 * 60 }),
+      secondary: Object.assign(u(rem * 0.82 + 4), { window_minutes: 10080, kind: 'weekly', resets_in_seconds: 2 * 86400 + 5 * 3600 }),
+    });
   }
 
   const grid = document.getElementById('pv-grid');
@@ -288,6 +311,9 @@
   document.getElementById('pv-mini').addEventListener('change', (e) => {
     document.body.classList.toggle('pv-hide-mini', !e.target.checked);
   });
+
+  // 账号档位切换：纯换载荷重画一次（十套皮肤的主行标签 / 周行显隐都要跟着变）
+  proBox.addEventListener('change', () => paint(current, isPro() ? 'Pro（仅周额度）' : 'Plus（5h + 周）'));
 })();
 </script>
 </body>

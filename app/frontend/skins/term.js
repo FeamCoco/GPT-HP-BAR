@@ -19,9 +19,10 @@ window.SKINS['term'] = {
 
   update(el, u, s) {
     const q = (c) => el.querySelector(c);
-    const ok = !!u.ok;
-    const rem5 = ok ? HP.rem(u.primary.used_percent) : null;
-    const remw = ok ? HP.rem(u.secondary.used_percent) : null;
+    const W = HP.win(u, s);      // 窗口语义归一：主行可能真是 5h，也可能是周（Pro 5x/20x 只有周额度）
+    const ok = W.ok;
+    const rem5 = W.mainRem;
+    const remw = W.weekRem;
     const danger = HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('danger', danger && rem5 != null && rem5 <= 20);
     el.classList.toggle('nodata', !ok);
@@ -41,16 +42,18 @@ window.SKINS['term'] = {
       blocks(b5, v);
       n5.textContent = v == null ? '--%' : Math.round(v) + '%';
     }, { ease: HP.easeStep(5), start: () => HP.fx(n5, 'jitter') });
-    HP.tween(el, 'tw', s.show_week === false ? null : remw, (v) => {
+    HP.tween(el, 'tw', W.showWeek ? remw : null, (v) => {
       blocks(q('.bwk'), v);
       q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
     }, { ease: HP.easeStep(5) });
 
-    // 标题行 plan / 尾行 开关（reset · credits · 无数据源），分隔符随两侧显隐
+    // 标题行 plan / 主行档位 / 尾行 开关（reset · credits · 无数据源），分隔符随两侧显隐
     q('.plan').textContent = ok ? String(u.plan || '--').toLowerCase() : '--';
+    // 主行档位用紧凑拼写（终端是等宽窄列）：Plus 的 5h / Pro 的 week
+    q('.line .k').textContent = W.mainLabelShort;
     q('.err').style.display = ok ? 'none' : '';
-    q('.wk-row').style.display = s.show_week === false ? 'none' : '';
-    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    q('.wk-row').style.display = W.showWeek ? '' : 'none';
+    const cdVal = W.mainCd;
     const cdOn = s.show_countdown !== false && cdVal != null;
     const crOn = s.show_credits !== false;
     q('.cdw').style.display = cdOn ? '' : 'none';

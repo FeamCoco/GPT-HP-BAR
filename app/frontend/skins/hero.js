@@ -16,7 +16,7 @@ window.SKINS['hero'] = {
       <div class="num n5">--%</div>
       <div class="track"><i class="b5"></i><span class="ticks"></span></div>
       <div class="sub">
-        <span class="win">@@win5h@@<span class="cdw"> · @@reset@@ <b class="cdv">--</b></span></span>
+        <span class="win"><span class="wl">@@win5h@@</span><span class="cdw"> · @@reset@@ <b class="cdv">--</b></span></span>
         <span class="nodata">@@no_source@@</span>
         <span class="wk">@@week_left@@ <b class="nw">--%</b></span>
       </div>
@@ -29,9 +29,10 @@ window.SKINS['hero'] = {
 
   update(el, u, s) {
     const q = (c) => el.querySelector(c);
-    const ok = !!u.ok;
-    const rem5 = ok ? HP.rem(u.primary.used_percent) : null;
-    const remw = ok ? HP.rem(u.secondary.used_percent) : null;
+    const W = HP.win(u, s);      // 窗口语义归一：主行可能真是 5h，也可能是周（Pro 5x/20x 只有周额度）
+    const ok = W.ok;
+    const rem5 = W.mainRem;
+    const remw = W.weekRem;
     const danger = HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('danger', danger && rem5 != null && rem5 <= 20);
     el.classList.toggle('nodata', !ok);
@@ -46,17 +47,20 @@ window.SKINS['hero'] = {
     }, { ease: HP.easeSoft, start: () => HP.fx(n5, 'pop') });
     n5.classList.toggle('danger-flash', rem5 != null && rem5 <= 20);
 
-    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    const cdVal = W.mainCd;
     q('.cdv').textContent = cdVal ?? '--';
     // 周窗口：关掉时传 null（顺带把补间状态复位，重新打开时不会从旧值补一段）
-    HP.tween(el, 'hpw', s.show_week === false ? null : remw, (v) => {
+    HP.tween(el, 'hpw', W.showWeek ? remw : null, (v) => {
       q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
     }, { ease: HP.easeSoft });
 
-    // 副行：有数据 -> 5h 窗口/重置/周剩余；无数据 -> 无数据源
+    // 副行：有数据 -> 「档位标签」/重置/周剩余；无数据 -> 无数据源
+    // 档位标签：Plus 是「5h 窗口」；Pro 5x/20x 没有 5h 额度，主行就是周 → 「本周」，
+    // 此时周行不再重复占位（W.showWeek 已由 HP.win 判掉）
+    q('.wl').textContent = W.mainLabel;
     q('.win').style.display = ok ? '' : 'none';
     q('.nodata').style.display = ok ? 'none' : '';
-    q('.wk').style.display = (ok && s.show_week !== false) ? '' : 'none';
+    q('.wk').style.display = W.showWeek ? '' : 'none';
     q('.cdw').style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
 
     const m = q('.hp-mail'); const txt = HP.mail(u.email);

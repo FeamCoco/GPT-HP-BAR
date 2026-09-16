@@ -84,7 +84,13 @@ function showUsage(u) {
   const hint = $("#src_hint");
   const act = $("#src_action");
   if (u && u.ok) {
-    el.innerHTML = `<b style="color:#6ee7b7">${T('connected')}</b> · ${u.source} · ${T('conn_5h_left')} ${Math.round(100 - (u.primary.used_percent ?? 0))}%` +
+    // 主行到底是不是 5h 由 Rust 按时长判（Pro 5x/20x 只有周额度 → has_5h=false，
+    // 此时 primary 里装的是周窗口）；used_percent 缺失时不能拿 0 顶上去 ——
+    // API-key 模式没有窗口额度，硬算会显示成"剩余 100%"
+    const used = u.primary && u.primary.used_percent;
+    const left = used == null ? "--" : Math.round(100 - used) + "%";
+    const label = T(u.has_5h === false ? "conn_week_left" : "conn_5h_left");
+    el.innerHTML = `<b style="color:#6ee7b7">${T('connected')}</b> · ${u.source} · ${label} ${left}` +
       (u.email ? ` · ${u.email}` : "") + (u.plan ? ` · ${String(u.plan).toUpperCase()}` : "");
     hint.textContent = "";
     act.style.display = "none";
@@ -107,8 +113,9 @@ const MOCK_USAGE = {
   ok: true, plan: "plus", email: "codex@example.com",
   get source() { return T("mock_source"); }, // 语言切换后预览数据源名同步重译
   credits: { unlimited: false, balance: 12.5 },
-  primary: { used_percent: 34, resets_in_seconds: 2 * 3600 + 51 * 60 },
-  secondary: { used_percent: 61, resets_in_seconds: 5 * 3600 + 12 * 60 },
+  has_5h: true,
+  primary: { used_percent: 34, window_minutes: 300, kind: "five_hour", resets_in_seconds: 2 * 3600 + 51 * 60 },
+  secondary: { used_percent: 61, window_minutes: 10080, kind: "weekly", resets_in_seconds: 5 * 3600 + 12 * 60 },
 };
 const PV_ORDER = ["hero", "glass", "term", "card", "tile", "battery", "gauge", "neon", "liquid", "pixel"];
 

@@ -26,17 +26,19 @@ window.SKINS['card'] = {
 
   update(el, u, s) {
     const q = (c) => el.querySelector(c);
-    const ok = !!u.ok;
-    const rem5 = ok ? HP.rem(u.primary.used_percent) : null;
-    const remw = ok ? HP.rem(u.secondary.used_percent) : null;
+    const W = HP.win(u, s);      // 窗口语义归一：主行可能真是 5h，也可能是周（Pro 5x/20x 只有周额度）
+    const ok = W.ok;
+    const rem5 = W.mainRem;
+    const remw = W.weekRem;
     const danger = HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('danger', danger);
+    q('.row .k').textContent = W.mainLabel;    // 主行标签随档位走（5h 窗口 / 本周）
 
     const show = (sel, on) => { const n = q(sel); if (n) n.style.display = on ? '' : 'none'; };
-    show('.wk-row', s.show_week !== false);
+    show('.wk-row', W.showWeek);
     show('.cr-row', s.show_credits !== false);
     show('.foot', s.show_countdown !== false || true); // foot 还承载状态点，仅关倒计时
-    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    const cdVal = W.mainCd;
     const cd = q('.cd');
     if (cd) cd.style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
 
@@ -49,7 +51,7 @@ window.SKINS['card'] = {
       n5.textContent = v == null ? '--%' : Math.round(v) + '%';
     }, { start: () => HP.fx(n5, 'tick') });
     n5.classList.toggle('danger-flash', rem5 != null && rem5 <= 20);
-    HP.tween(el, 'cw', s.show_week === false ? null : remw, (v) => {
+    HP.tween(el, 'cw', W.showWeek ? remw : null, (v) => {
       q('.bwk').style.width = (v == null ? 0 : v) + '%';
       q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
     });

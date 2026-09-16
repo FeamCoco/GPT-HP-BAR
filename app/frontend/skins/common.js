@@ -2,6 +2,48 @@
 window.HP = {
   // 已用% -> 剩余%
   rem(used) { return used == null ? null : Math.max(0, 100 - used); },
+
+  // ---- 窗口语义（v0.7）-----------------------------------------------------
+  // 背景：以前十套皮肤各自写着 `rem5 = 100 - u.primary.used_percent`，默认
+  // primary 就是"5h 窗口"、secondary 就是"周窗口"。可这只是 Plus 的惯例 ——
+  // Pro 5x/20x 根本没有 5h 额度，只返回一个周窗口（而且就占着 primary 槽位），
+  // 于是主行标签写着"5h 窗口"、数字其实是周剩余，副行还多出一行 '--%'。
+  // 现在 Rust 侧按时长把窗口归一成 primary/secondary（见 datasource.rs 的
+  // normalize_windows），这里只负责"怎么显示"，十套皮肤共用同一份判断：
+  //   · 主行 = primary，标签按档位取（5h 窗口 / 本周 / 日窗口 / 本月）
+  //   · 副行 = secondary，只有"确实是另一个窗口"时才占一行
+  //   · 无数据源时保持原样（两行都留占位、都是 '--%'）—— 别让"没登录"和
+  //     "Pro 只有周额度"这两种完全不同的状态在视觉上撞在一起
+  win(u, s) {
+    const st = s || {};
+    const ok = !!(u && u.ok);
+    const p = (u && u.primary) || null;
+    const w = (u && u.secondary) || null;
+    const pct = (x) => (x && x.used_percent != null ? x.used_percent : null);
+    // 只有明确 false 才算"没有 5h"；null / undefined（老数据源、判不出来）沿用旧假设
+    const has5 = !(u && u.has_5h === false);
+    const kind = (p && p.kind) || (has5 ? 'five_hour' : 'weekly');
+    const weekRem = (ok && has5 && pct(w) != null) ? HP.rem(pct(w)) : null;
+    return {
+      ok, has5, kind,
+      mainRem: ok ? HP.rem(pct(p)) : null,
+      mainCd: (ok && p) ? HP.durMaybe(p.resets_in_seconds) : null,
+      mainLabel: HP.winLabel(kind, false),
+      mainLabelShort: HP.winLabel(kind, true),
+      weekRem,
+      // 有数据源时按"窗口真的存在"决定；无数据源时保留占位（布局不塌陷）
+      showWeek: st.show_week !== false && (!ok || weekRem != null),
+    };
+  },
+
+  /// 窗口档位 -> 主行标签；short = true 给终端这类窄位置用紧凑拼写
+  winLabel(kind, short) {
+    if (kind === 'weekly') return HP.t(short ? 'win_week_short' : 'win_week');
+    if (kind === 'daily') return HP.t('win_day');
+    if (kind === 'monthly') return HP.t('win_month');
+    return HP.t(short ? 'win5h_short' : 'win5h');
+  },
+
   // 秒 -> "Xh Ym"
   dur(sec) {
     if (sec == null || sec < 0) return '--';

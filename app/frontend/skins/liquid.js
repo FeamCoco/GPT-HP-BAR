@@ -22,11 +22,17 @@ window.SKINS['liquid'] = {
   mini: `
     <div class="sk-liquid-mini"><span class="m-cup"><i class="m-fill"></i><em class="m-bub"></em></span><span class="m-num">--%</span></div>`,
 
-  // 窗口剩余时长 ≈ window_minutes × 剩余%，满杯时正好 "5h"（与 showcase 文案一致）
+  // 窗口剩余时长 ≈ window_minutes × 剩余%，满杯时正好 "5h"（与 showcase 文案一致）。
+  // 主行通常是 5h（300min），但 Pro 5x/20x 只有周额度 —— 那时这里是 10080min，
+  // 必须升到天级，否则会显示成 "102h" 这种没人读得出来的数字。
   remainTxt(mins, rem) {
     if (rem == null) return '--';
     if (mins == null || mins <= 0) return Math.round(rem) + '%';
     const m = Math.max(0, Math.round((mins * rem) / 100));
+    if (m >= 48 * 60) {
+      const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
+      return h ? d + 'd ' + h + 'h' : d + 'd';
+    }
     const h = Math.floor(m / 60), mm = m % 60;
     return h > 0 ? (mm ? h + 'h ' + mm + 'm' : h + 'h') : mm + 'm';
   },

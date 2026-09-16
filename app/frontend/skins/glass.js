@@ -24,9 +24,10 @@ window.SKINS['glass'] = {
 
   update(el, u, s) {
     const q = (c) => el.querySelector(c);
-    const ok = !!u.ok;
-    const rem5 = ok ? HP.rem(u.primary.used_percent) : null;
-    const remw = ok ? HP.rem(u.secondary.used_percent) : null;
+    const W = HP.win(u, s);      // 窗口语义归一：主行可能真是 5h，也可能是周（Pro 5x/20x 只有周额度）
+    const ok = W.ok;
+    const rem5 = W.mainRem;
+    const remw = W.weekRem;
     const danger = HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('danger', danger && rem5 != null && rem5 <= 20);
     el.classList.toggle('nodata', !ok);
@@ -37,15 +38,17 @@ window.SKINS['glass'] = {
     HP.tween(el, 'g5', rem5, (v) => {
       n5.textContent = v == null ? '--%' : Math.round(v) + '%';
     }, { start: () => { HP.fx(n5, 'slide'); HP.fx(el.querySelector('.bolt'), 'pop'); } });
-    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    const cdVal = W.mainCd;
     q('.cdv').textContent = cdVal ?? '--';
-    HP.tween(el, 'gw', s.show_week === false ? null : remw, (v) => {
+    HP.tween(el, 'gw', W.showWeek ? remw : null, (v) => {
       q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
     });
 
     // 开关：倒计时 / 周；分隔线随两侧内容显隐
+    // 无 5h 额度时（Pro）主行那个数字本身就是周剩余，WK 标签没有第二个数字可比，
+    // 于是跟着收起 —— 胶囊里只留一个数字，不存在"这是哪个窗口"的歧义
     const cdOn = s.show_countdown !== false && cdVal != null;
-    const wkOn = s.show_week !== false;
+    const wkOn = W.showWeek;
     q('.cd').style.display = cdOn ? '' : 'none';
     q('.week').style.display = wkOn ? '' : 'none';
     q('.s2').style.display = (cdOn && wkOn) ? '' : 'none';

@@ -39,9 +39,10 @@ window.SKINS['pixel'] = {
 
   update(el, u, s) {
     const q = (c) => el.querySelector(c);
-    const ok = !!u.ok;
-    const rem5 = ok && u.primary ? HP.rem(u.primary.used_percent) : null;
-    const remw = ok && u.secondary ? HP.rem(u.secondary.used_percent) : null;
+    const W = HP.win(u, s);      // 窗口语义归一：主行可能真是 5h，也可能是周（Pro 5x/20x 只有周额度）
+    const ok = W.ok;
+    const rem5 = W.mainRem;
+    const remw = W.weekRem;
     HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('nodata', !ok);
 
@@ -55,15 +56,15 @@ window.SKINS['pixel'] = {
       hpEl.textContent = v == null ? '--' : Math.round(v);
     }, { ease: HP.easeStep(5), start: () => { HP.fx(hpEl, 'blip'); HP.fx(q('.p-blocks'), 'blip'); } });
 
-    const cdVal = HP.durMaybe(ok && u.primary ? u.primary.resets_in_seconds : null);
+    const cdVal = W.mainCd;
     q('.p-cd').textContent = cdVal ?? '--';
-    HP.tween(el, 'pxw', s.show_week === false ? null : remw, (v) => {
+    HP.tween(el, 'pxw', W.showWeek ? remw : null, (v) => {
       q('.p-wk').textContent = v == null ? '--' : Math.round(v);
     }, { ease: HP.easeStep(4) });
 
     const show = (sel, on) => { const n = q(sel); if (n) n.style.display = on ? '' : 'none'; };
     show('.p-cdw', s.show_countdown !== false && cdVal != null);
-    show('.p-wkw', s.show_week !== false);
+    show('.p-wkw', W.showWeek);     // 无 5h 额度时主行就是周，WK 标签不再重复
   },
 
   updateMini(el, u, s) {

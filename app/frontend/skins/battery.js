@@ -17,7 +17,7 @@ window.SKINS['battery'] = {
         <div><span class="num">--%</span><div class="lab">@@codex_remaining@@</div></div>
       </div>
       <div class="sub">
-        <span><span class="win">@@win5h@@</span><span class="cdw"> · @@reset@@ <b class="cdv">--</b></span></span>
+        <span><span class="win"><span class="wl">@@win5h@@</span></span><span class="cdw"> · @@reset@@ <b class="cdv">--</b></span></span>
         <span class="wk">@@week_w@@ <b class="nw">--%</b></span>
       </div>
     </div>`,
@@ -29,9 +29,10 @@ window.SKINS['battery'] = {
 
   update(el, u, s) {
     const q = (c) => el.querySelector(c);
-    const ok = !!u.ok;
-    const rem5 = ok ? HP.rem(u.primary.used_percent) : null;
-    const remw = ok ? HP.rem(u.secondary.used_percent) : null;
+    const W = HP.win(u, s);      // 窗口语义归一：主行可能真是 5h，也可能是周（Pro 5x/20x 只有周额度）
+    const ok = W.ok;
+    const rem5 = W.mainRem;
+    const remw = W.weekRem;
     const danger = HP.applyTone(el, rem5 ?? remw, s.accent);
     el.classList.toggle('danger', danger && rem5 != null && rem5 <= 20);
     el.classList.toggle('nodata', !ok);
@@ -43,13 +44,15 @@ window.SKINS['battery'] = {
       fill.style.width = (v == null ? 0 : v) + '%';
       num.textContent = v == null ? '--%' : Math.round(v) + '%';
     }, { start: () => HP.fx(num, 'charge') });
-    const cdVal = HP.durMaybe(ok ? u.primary.resets_in_seconds : null);
+    const cdVal = W.mainCd;
     q('.cdv').textContent = cdVal ?? '--';
+    q('.wl').textContent = W.mainLabel;   // 主行档位标签（5h 窗口 / 本周）
     q('.cdw').style.display = (s.show_countdown === false || cdVal == null) ? 'none' : '';
-    HP.tween(el, 'bw', s.show_week === false ? null : remw, (v) => {
+    HP.tween(el, 'bw', W.showWeek ? remw : null, (v) => {
       q('.nw').textContent = v == null ? '--%' : Math.round(v) + '%';
     });
-    q('.wk').style.display = s.show_week === false ? 'none' : '';
+    // 无 5h 额度时主行那个数字就是周剩余，WK 行不再重复
+    q('.wk').style.display = W.showWeek ? '' : 'none';
     // show_credits：电池无 credits 行，忽略
 
     const m = q('.hp-mail'); const txt = HP.mail(u.email);

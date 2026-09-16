@@ -38,9 +38,10 @@ window.SKINS['neon'] = {
 
   update(el, u, s) {
     const q = (c) => el.querySelector(c);
-    const ok = !!u.ok;
-    const rem5 = ok && u.primary ? HP.rem(u.primary.used_percent) : null;
-    const remw = ok && u.secondary ? HP.rem(u.secondary.used_percent) : null;
+    const W = HP.win(u, s);      // 窗口语义归一：主行可能真是 5h，也可能是周（Pro 5x/20x 只有周额度）
+    const ok = W.ok;
+    const rem5 = W.mainRem;
+    const remw = W.weekRem;
     const danger = this.tone(el, rem5 ?? remw, s);
     el.classList.toggle('danger', danger);
     el.classList.toggle('nodata', !ok);
@@ -50,9 +51,9 @@ window.SKINS['neon'] = {
     show('.n-info', s.show_email !== false || s.show_credits !== false);
     show('.n-mail', s.show_email !== false);
     show('.n-cr', s.show_credits !== false);
-    const cdVal = HP.durMaybe(ok && u.primary ? u.primary.resets_in_seconds : null);
+    const cdVal = W.mainCd;
     show('.n-cdw', s.show_countdown !== false && cdVal != null);
-    show('.n-wkw', s.show_week !== false);
+    show('.n-wkw', W.showWeek);      // 无 5h 额度时主行就是周，WEEK 标签不再重复
 
     // 赛博语言：血槽扫光条在变化瞬间亮一下（charge，只动亮度不动位置），
     // 大数字横向抖一下（jitter）—— CRT 刷新时高压不稳的那两帧，
@@ -63,7 +64,7 @@ window.SKINS['neon'] = {
       nf.style.width = (v == null ? 0 : v) + '%';
     }, { start: () => { HP.fx(num, 'jitter'); HP.fx(nf, 'charge'); } });
     q('.n-cd').textContent = cdVal ?? '--';
-    HP.tween(el, 'nw', s.show_week === false ? null : remw, (v) => {
+    HP.tween(el, 'nw', W.showWeek ? remw : null, (v) => {
       q('.n-wk').textContent = v == null ? '--%' : Math.round(v) + '%';
     });
     q('.n-plan').textContent = ok ? (u.plan || '--').toUpperCase() : '--';

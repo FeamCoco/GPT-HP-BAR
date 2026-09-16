@@ -18,11 +18,34 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const WHAM_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 const UA: &str = "GPT-HP-BAR/0.1 (Windows; +local)";
 
+/// 窗口长度归档（见 [`classify_window`]）。**判定只看窗口长度字段，不看槽位名**：
+/// Plus 的 5h 落在 `primary_window`、周窗口落在 `secondary_window` 只是惯例 ——
+/// Pro 5x/20x 只有周额度时，那个周窗口本身就占着 primary 槽位。
+/// Codex 自家前端也是按 `limit_window_seconds / 60` 分桶，不认槽位名。
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowKind {
+    /// 短窗口档（≤12h）：Plus 的滚动 5h = 300min 落在这里
+    FiveHour,
+    /// ≈24h
+    Daily,
+    /// ≈7d（10080min）
+    Weekly,
+    /// ≥30d（年窗口也归此档）
+    Monthly,
+    /// 有时长但不在已知档位
+    Unknown,
+}
+
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct WindowUsage {
     pub used_percent: Option<f64>,
     pub window_minutes: Option<u64>,
     pub resets_in_seconds: Option<i64>,
+    /// 窗口长度归档（由 `window_minutes` / `limit_window_seconds` 归一而来）。
+    /// 数据源没给窗口长度时为 None —— 前端据此把主行标签在「5h 窗口 / 本周」之间切换。
+    #[serde(default)]
+    pub kind: Option<WindowKind>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
@@ -34,6 +57,13 @@ pub struct Usage {
     pub credits: Option<Value>,
     pub primary: WindowUsage,
     pub secondary: WindowUsage,
+    /// 是否存在 5h（短窗口）额度，三态：
+    ///   `Some(true)`  —— 有 5h 窗口（Plus 的正常态）
+    ///   `Some(false)` —— 只有周（及以上）额度（Pro 5x/20x、Plus 的临时取消期）
+    ///   `None`        —— 判不出来（数据源没给窗口长度，plan 也不认识）
+    /// 前端只把 `false` 当作"主行其实是周"的依据，`None` 一律沿用旧假设。
+    #[serde(default)]
+    pub has_5h: Option<bool>,
     pub error: Option<String>,
     pub fetched_at: u64,
     /// 数据源状态（前端据此给出各自的下一步引导）：
@@ -185,33 +215,164 @@ fn resets_in_seconds(w: &Value) -> Option<i64> {
     None
 }
 
+/// 窗口长度（分钟）。优先 codex app-server / codex-rs 的 `window_minutes`
+/// （其 camelCase 拼写 `windowDurationMins` 也认），其次 REST `wham/usage` 原生的
+/// `limit_window_seconds`（18000 = 5h / 604800 = 7d）。
+///
+/// 两条纪律：
+///   · **只认"窗口长度"字段** —— 绝不用 `resets_in_seconds` 反推：剩余时间随用量
+///     递减，拿它当长度会把 5h 窗口在快重置时判成短窗口、刚重置时判成长窗口；
+///   · 不认识就 `None`（宁可标"未知"交给 plan 兜底，也不要猜一个档位出来）。
+fn window_minutes(w: &Value) -> Option<u64> {
+    for k in ["window_minutes", "windowDurationMins", "window_duration_mins", "limit_window_minutes"] {
+        if let Some(v) = w.get(k).and_then(num) {
+            if v > 0.0 { return Some(v.round() as u64); }
+        }
+    }
+    for k in ["limit_window_seconds", "window_seconds", "limit_window_secs", "window_secs"] {
+        if let Some(v) = w.get(k).and_then(num) {
+            if v > 0.0 { return Some((v / 60.0).round() as u64); }
+        }
+    }
+    None
+}
+
+/// 由窗口长度（分钟）归档。阈值与 Codex 自家前端一致；**必须降序判定** ——
+/// 升序判的话月/年窗口会先被 `>= 10079` 的 Weekly 吃掉。
+///
+/// 721~1438min（12h~24h）之间刻意留空返回 `Unknown`：现实中不存在这种窗口，
+/// 真出现说明字段语义变了，此时标"未知"比硬塞进某一档安全。
+fn classify_window(mins: f64) -> WindowKind {
+    if !(mins > 0.0) {
+        WindowKind::Unknown
+    } else if mins >= 43_200.0 {
+        WindowKind::Monthly        // ≥30d
+    } else if mins >= 10_079.0 {
+        WindowKind::Weekly         // ≥7d − 1min
+    } else if mins >= 1_439.0 {
+        WindowKind::Daily          // ≥24h − 1min
+    } else if mins <= 720.0 {
+        WindowKind::FiveHour       // ≤12h：短窗口档
+    } else {
+        WindowKind::Unknown
+    }
+}
+
+/// 槽位排序权重：越"短"的窗口越靠前（占主行）
+fn window_rank(k: Option<WindowKind>) -> u8 {
+    match k {
+        Some(WindowKind::FiveHour) => 0,
+        Some(WindowKind::Daily) => 1,
+        Some(WindowKind::Weekly) => 2,
+        Some(WindowKind::Monthly) => 3,
+        None | Some(WindowKind::Unknown) => 4,
+    }
+}
+
+/// 判定"是否存在 5h（短窗口）额度"，三态见 [`Usage::has_5h`]。顺序即优先级：
+///   1. **窗口时长已知就是权威** —— 按归档结果说话，plan 说什么都不改它。
+///      Plus 在 2026-07-12 ~ 08-25 那段临时取消期里也只返回周窗口，只有按时长判才对；
+///   2. 时长未知但两个窗口并存（数据源太老 / 中转把字段吃掉了）→ `None`，
+///      把"要不要当 5h"交回前端沿用旧假设；
+///   3. 只剩一个窗口且时长未知 → 才用 plan 兜底：pro / prolite 判"无 5h"，
+///      plus / business / team / edu / enterprise 判"有"，其余一律 `None`（不猜）。
+fn infer_has_5h(primary: &WindowUsage, secondary: &WindowUsage, plan: Option<&str>) -> Option<bool> {
+    if let Some(k) = primary.kind {
+        return Some(k == WindowKind::FiveHour);
+    }
+    if let Some(k) = secondary.kind {
+        return Some(k == WindowKind::FiveHour);
+    }
+    if secondary.used_percent.is_some() || primary.used_percent.is_none() {
+        return None;
+    }
+    let norm: String = plan.unwrap_or("").trim().to_ascii_lowercase()
+        .chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    match norm.as_str() {
+        "pro" | "prolite" | "pro5x" | "pro20x" => Some(false),
+        "plus" | "business" | "team" | "edu" | "enterprise" => Some(true),
+        _ => None,
+    }
+}
+
+/// 把「按槽位」的 primary/secondary 归一成「按窗口长度」的语义。
+///
+/// 这是"没有 5h 额度"在数据层的落点：
+///   · Plus 正常态        → primary = 5h、secondary = 周（与旧行为一致）
+///   · Pro 5x / 20x       → 只有周窗口，它落在哪个槽位都不重要 → primary = 周、
+///                          **secondary 置空**（前端把主行标签改成「本周」，
+///                          且不再另起一行重复同一个数字）
+///   · API-key / 无窗口   → 两个都空；不是"5h 剩 0%"，也就绝不伪造 100% 占位
+///   · 槽位颠倒（5h 在后）→ 按长度排回来
+///
+/// 副行只有"确实是另一个窗口"时才保留；主行空而副行有值时再交换一次，
+/// 避免出现「主行 '--%'、副行却有数字」这种自相矛盾的形态。
+fn normalize_windows(a: WindowUsage, b: WindowUsage, plan: Option<&str>) -> (WindowUsage, WindowUsage, Option<bool>) {
+    let (mut primary, mut secondary) = if window_rank(b.kind) < window_rank(a.kind) { (b, a) } else { (a, b) };
+    if secondary.used_percent.is_none() {
+        secondary = WindowUsage::default();
+    }
+    if primary.used_percent.is_none() && secondary.used_percent.is_some() {
+        primary = secondary;
+        secondary = WindowUsage::default();
+    }
+    let has_5h = infer_has_5h(&primary, &secondary, plan);
+    (primary, secondary, has_5h)
+}
+
+/// 一次 wham / app-server 解析的完整结果（窗口已按长度归一）
+struct RateLimits {
+    primary: WindowUsage,
+    secondary: WindowUsage,
+    has_5h: Option<bool>,
+    credits: Option<Value>,
+    plan: Option<String>,
+}
+
 /// 宽容解析 wham/usage 响应：rate_limits | rate_limit 两种拼写都认；
 /// 窗口键 primary_window|primary 与 secondary_window|secondary 都认
-/// （codex app-server 的 account/rateLimits/read 用的是不带 _window 后缀的键）
-fn parse_wham(v: &Value) -> (WindowUsage, WindowUsage, Option<Value>) {
+/// （codex app-server 的 account/rateLimits/read 用的是不带 _window 后缀的键）。
+/// `plan_hint` 是 app-server 的 account/read 给出的 plan，仅在响应体自身没有
+/// `plan_type` 时兜底 —— plan 参与"5h 是否存在"的最后一级判定，见 [`infer_has_5h`]。
+fn parse_wham(v: &Value, plan_hint: Option<&str>) -> RateLimits {
     let rl = v.get("rate_limits").or_else(|| v.get("rate_limit")).unwrap_or(&Value::Null);
     let win = |keys: &[&str]| {
         let w = keys.iter().find_map(|k| rl.get(k)).unwrap_or(&Value::Null);
+        let mins = window_minutes(w);
         WindowUsage {
             used_percent: w.get("used_percent").and_then(num)
                 .or_else(|| w.get("used_percent_human").and_then(num)),
-            window_minutes: w.get("window_minutes").and_then(num).map(|m| m.round() as u64),
+            window_minutes: mins,
             resets_in_seconds: resets_in_seconds(w),
+            kind: mins.map(|m| classify_window(m as f64)),
         }
     };
+    // wham/usage 自带 plan_type —— 以前只从 id_token 拿 plan，中转/rest 源的徽标因此
+    // 一直是 '--'；顺手用它，也让 infer_has_5h 的兜底有依据。
+    let plan = v.get("plan_type").and_then(|x| x.as_str())
+        .or_else(|| v.get("plan").and_then(|x| x.as_str()))
+        .map(String::from)
+        .or_else(|| plan_hint.map(String::from));
     let credits = v.get("credits").cloned()
         .or_else(|| v.get("credits_balance").map(|b| serde_json::json!({ "balance": b })));
-    (win(&["primary_window", "primary"]), win(&["secondary_window", "secondary"]), credits)
+    let (primary, secondary, has_5h) = normalize_windows(
+        win(&["primary_window", "primary"]),
+        win(&["secondary_window", "secondary"]),
+        plan.as_deref(),
+    );
+    RateLimits { primary, secondary, has_5h, credits, plan }
 }
 
 fn fetch_rest(auth: &Auth, account_id: Option<&str>) -> Result<Usage, String> {
     let token = auth.access_token.as_ref().ok_or("rest: auth.json 无 tokens.access_token（非 ChatGPT OAuth 登录）")?;
     let v = http_get_json(WHAM_URL, token, account_id)?;
-    let (primary, secondary, credits) = parse_wham(&v);
+    let r = parse_wham(&v, None);
     Ok(Usage {
         ok: true, source: "rest".into(),
-        credits,
-        primary, secondary,
+        plan: r.plan,
+        credits: r.credits,
+        has_5h: r.has_5h,
+        primary: r.primary, secondary: r.secondary,
         fetched_at: now_unix(),
         ..Default::default()
     })
@@ -280,12 +441,13 @@ fn fetch_app_server() -> Result<Usage, String> {
     let _ = child.kill();
 
     let Some(rate) = rate else { return Err("app-server: 未取得 rateLimits 结果".into()) };
-    let (primary, secondary, credits) = parse_wham(&rate);
     let plan = account.as_ref().and_then(|a| a.get("plan")).and_then(|x| x.as_str()).map(String::from);
     let email = account.as_ref().and_then(|a| a.get("email")).and_then(|x| x.as_str()).map(String::from);
+    let r = parse_wham(&rate, plan.as_deref());
     Ok(Usage {
-        ok: true, source: "app-server".into(), plan, email, credits,
-        primary, secondary, fetched_at: now_unix(),
+        ok: true, source: "app-server".into(), plan: r.plan, email, credits: r.credits,
+        has_5h: r.has_5h,
+        primary: r.primary, secondary: r.secondary, fetched_at: now_unix(),
         ..Default::default()
     })
 }
@@ -297,10 +459,11 @@ fn fetch_relay(base_url: &str, key: &str) -> Result<Usage, String> {
     for p in paths {
         match http_get_json(&format!("{}{}", base, p), key, None) {
             Ok(v) => {
-                let (primary, secondary, credits) = parse_wham(&v);
+                let r = parse_wham(&v, None);
                 return Ok(Usage {
-                    ok: true, source: "relay".into(), credits,
-                    primary, secondary, fetched_at: now_unix(),
+                    ok: true, source: "relay".into(), plan: r.plan, credits: r.credits,
+                    has_5h: r.has_5h,
+                    primary: r.primary, secondary: r.secondary, fetched_at: now_unix(),
                     ..Default::default()
                 });
             }
@@ -490,15 +653,22 @@ pub fn probe() {
     let u = fetch_all();
     println!("ok={} source={} status={}", u.ok, u.source, u.status);
     println!("plan={:?} email={:?}", u.plan, u.email);
-    println!("primary: used={:?} window_min={:?} reset_in={:?}", u.primary.used_percent, u.primary.window_minutes, u.primary.resets_in_seconds);
-    println!("secondary: used={:?} window_min={:?} reset_in={:?}", u.secondary.used_percent, u.secondary.window_minutes, u.secondary.resets_in_seconds);
+    println!("has_5h={:?}  (true=有 5h 窗口 / false=只有周及以上额度 / None=判不出来)", u.has_5h);
+    println!("primary: used={:?} window_min={:?} kind={:?} reset_in={:?}",
+        u.primary.used_percent, u.primary.window_minutes, u.primary.kind, u.primary.resets_in_seconds);
+    println!("secondary: used={:?} window_min={:?} kind={:?} reset_in={:?}",
+        u.secondary.used_percent, u.secondary.window_minutes, u.secondary.kind, u.secondary.resets_in_seconds);
     println!("credits={:?}", u.credits.is_some());
     if let Some(e) = &u.error { println!("error: {}", e); }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_status, looks_like_network_error};
+    use super::{
+        classify_status, classify_window, infer_has_5h, looks_like_network_error,
+        normalize_windows, window_minutes, WindowKind, WindowUsage,
+    };
+    use serde_json::json;
 
     // classify_status 参数顺序：ok, has_login, has_base, has_key, network_error
 
@@ -558,5 +728,133 @@ mod tests {
         assert!(looks_like_network_error("connection refused"));
         assert!(!looks_like_network_error("https://x/y -> HTTP 404"));
         assert!(!looks_like_network_error("rest: auth.json 无 tokens.access_token"));
+    }
+
+    // ---- 窗口长度归档 / "没有 5h 额度" ----------------------------------------
+    // 构造一个窗口：used=已用%，mins=窗口长度（缺省 = 数据源没给长度）
+    fn w(used: f64, mins: Option<u64>) -> WindowUsage {
+        WindowUsage {
+            used_percent: Some(used),
+            window_minutes: mins,
+            resets_in_seconds: Some(3600),
+            kind: mins.map(|m| classify_window(m as f64)),
+        }
+    }
+    fn no_win() -> WindowUsage { WindowUsage::default() }
+
+    #[test]
+    fn window_kind_buckets_descending() {
+        assert_eq!(classify_window(300.0), WindowKind::FiveHour);
+        assert_eq!(classify_window(1440.0), WindowKind::Daily);
+        assert_eq!(classify_window(10080.0), WindowKind::Weekly);
+        assert_eq!(classify_window(43200.0), WindowKind::Monthly);
+        // 年窗口必须先被 Monthly 接住 —— 升序判定会被 Weekly 吃掉
+        assert_eq!(classify_window(525_600.0), WindowKind::Monthly);
+        // 12h~24h 之间刻意留空：宁可"未知"也不硬塞一档
+        assert_eq!(classify_window(1000.0), WindowKind::Unknown);
+        assert_eq!(classify_window(0.0), WindowKind::Unknown);
+        assert_eq!(classify_window(-1.0), WindowKind::Unknown);
+    }
+
+    #[test]
+    fn window_minutes_reads_both_spellings() {
+        // codex app-server（codex-rs 序列化）
+        assert_eq!(window_minutes(&json!({"window_minutes": 300})), Some(300));
+        assert_eq!(window_minutes(&json!({"windowDurationMins": 10080})), Some(10080));
+        // REST wham/usage 原生：limit_window_seconds
+        assert_eq!(window_minutes(&json!({"limit_window_seconds": 18000})), Some(300));
+        assert_eq!(window_minutes(&json!({"limit_window_seconds": 604800})), Some(10080));
+        assert_eq!(window_minutes(&json!({"used_percent": 42})), None);
+        // 关键回归：resets_in_seconds 不能当窗口长度用（它随用量递减，
+        // 拿它当长度会让 5h 窗口在快重置时"变短"、刚重置时"变长"）
+        assert_eq!(window_minutes(&json!({"resets_in_seconds": 120})), None);
+        assert_eq!(window_minutes(&json!({"window_minutes": 0})), None);
+    }
+
+    #[test]
+    fn plus_two_windows_keeps_5h_as_primary() {
+        let (p, s, has) = normalize_windows(w(12.0, Some(300)), w(40.0, Some(10080)), Some("plus"));
+        assert_eq!(p.kind, Some(WindowKind::FiveHour));
+        assert_eq!(s.kind, Some(WindowKind::Weekly));
+        assert_eq!(has, Some(true));
+    }
+
+    #[test]
+    fn pro_weekly_only_promotes_weekly_and_drops_secondary() {
+        // Pro 5x / 20x 的真实形态：只有一个窗口、长度 10080min，而且就占着 primary 槽位。
+        // 旧实现会把它当"5h 窗口"显示 —— 主行标签写 5h、数字其实是周剩余，副行还是 '--%'。
+        let (p, s, has) = normalize_windows(w(63.0, Some(10080)), no_win(), Some("pro"));
+        assert_eq!(has, Some(false));
+        assert_eq!(p.kind, Some(WindowKind::Weekly));
+        assert_eq!(p.used_percent, Some(63.0));
+        assert!(s.used_percent.is_none(), "副行必须置空，否则同一个数字会占两行");
+    }
+
+    #[test]
+    fn five_hour_only_keeps_5h_and_hides_week() {
+        let (p, s, has) = normalize_windows(w(12.0, Some(300)), no_win(), Some("plus"));
+        assert_eq!(p.kind, Some(WindowKind::FiveHour));
+        assert_eq!(has, Some(true));
+        assert!(s.used_percent.is_none());
+    }
+
+    #[test]
+    fn swapped_slots_are_realigned_by_length() {
+        // 槽位颠倒（5h 落在 secondary）→ 按长度排回主行，别信槽位名
+        let (p, s, has) = normalize_windows(w(40.0, Some(10080)), w(12.0, Some(300)), Some("plus"));
+        assert_eq!(p.kind, Some(WindowKind::FiveHour));
+        assert_eq!(p.used_percent, Some(12.0));
+        assert_eq!(s.kind, Some(WindowKind::Weekly));
+        assert_eq!(has, Some(true));
+    }
+
+    #[test]
+    fn duration_beats_plan() {
+        // 时长已知就是权威：plan=plus 但只给了一个周窗口 ——
+        // 2026-07-12~08-25 那段"临时取消 5h"的时期就是这个形态，必须判"无 5h"
+        assert_eq!(infer_has_5h(&w(40.0, Some(10080)), &no_win(), Some("plus")), Some(false));
+        // 反向同理：plan=pro 但给了一个 5h 窗口（将来 Pro 恢复 5h 时）
+        assert_eq!(infer_has_5h(&w(12.0, Some(300)), &no_win(), Some("pro")), Some(true));
+    }
+
+    #[test]
+    fn unknown_duration_falls_back_to_plan_then_gives_up() {
+        // 单窗口 + 时长未知 → plan 兜底
+        assert_eq!(normalize_windows(w(63.0, None), no_win(), Some("pro")).2, Some(false));
+        assert_eq!(normalize_windows(w(63.0, None), no_win(), Some("prolite")).2, Some(false));
+        assert_eq!(normalize_windows(w(63.0, None), no_win(), Some("pro_5x")).2, Some(false));
+        assert_eq!(normalize_windows(w(63.0, None), no_win(), Some("Plus")).2, Some(true));
+        assert_eq!(normalize_windows(w(63.0, None), no_win(), Some("business")).2, Some(true));
+        // plan 不认识 / 没有 plan → None（不猜，前端沿用旧假设）
+        assert_eq!(normalize_windows(w(63.0, None), no_win(), Some("weird")).2, None);
+        assert_eq!(normalize_windows(w(63.0, None), no_win(), None).2, None);
+        // 两窗口并存 + 时长都未知 → 视为旧布局 → None（不因为 plan=pro 就改判）
+        assert_eq!(normalize_windows(w(12.0, None), w(40.0, None), Some("pro")).2, None);
+    }
+
+    #[test]
+    fn no_windows_at_all_reports_nothing() {
+        // API-key / 按量计费模式：没有窗口额度，也不该伪造 100% / 0% 占位
+        let (p, s, has) = normalize_windows(no_win(), no_win(), Some("plus"));
+        assert!(p.used_percent.is_none() && s.used_percent.is_none());
+        assert_eq!(has, None);
+        assert!(p.kind.is_none() && s.kind.is_none());
+    }
+
+    #[test]
+    fn value_on_secondary_only_moves_up_to_primary() {
+        // 主行空、副行有值 → 交换，避免「主行 '--%'、副行有数字」的自相矛盾形态
+        let (p, s, _) = normalize_windows(no_win(), w(40.0, Some(10080)), Some("pro"));
+        assert_eq!(p.used_percent, Some(40.0));
+        assert!(s.used_percent.is_none());
+    }
+
+    #[test]
+    fn daily_plus_weekly_keeps_two_rows() {
+        // 罕见但存在：日窗口 + 周窗口 —— 两个都不是 5h，但都该显示
+        let (p, s, has) = normalize_windows(w(30.0, Some(1440)), w(70.0, Some(10080)), None);
+        assert_eq!(p.kind, Some(WindowKind::Daily));
+        assert_eq!(s.kind, Some(WindowKind::Weekly));
+        assert_eq!(has, Some(false));
     }
 }
