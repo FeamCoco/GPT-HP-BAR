@@ -27,6 +27,29 @@ window.I18N = {
     gauge_cap_week: 'CODEX 周剩余',
     ttl_settings: '设置',
     ttl_toggle: '切换 完整 / 紧凑 形态',
+    ttl_stats: '模型用量面板',
+    // 用量面板（stats.html）与速度徽标
+    btn_stats: '模型用量…',
+    st_speed: '当前速度',
+    st_active: '活跃',
+    st_idle: '休眠中',
+    st_running: '生成中…',
+    st_last_activity: '最近活动',
+    st_today: '今日',
+    st_week7: '近 7 天',
+    st_model: '模型',
+    st_input: '输入',
+    st_output: '输出',
+    st_total: '合计',
+    st_resp: '响应',
+    st_hours: '今日按小时分布',
+    st_src: '统计自本机 Codex 会话记录（~/.codex/sessions），纯本地计算，不上传任何数据。',
+    st_empty: '暂无会话数据：用 Codex 跑几个任务后这里就有数了。',
+    st_files: '会话文件',
+    st_scanned: '扫描于',
+    model_unknown: '未知模型',
+    // token 速度载具档位（图标固定，名称随语言）：🐢 <15 🚲 <40 🛵 <80 🚗 <150 🚄 <300 🚀
+    spd_names: ['乌龟', '单车', '摩托', '汽车', '高铁', '火箭'],
     skin_hero: '① 血条 Hero',
     skin_glass: '② 琉璃 Glass',
     skin_term: '③ 终端 Term',
@@ -120,6 +143,29 @@ window.I18N = {
     gauge_cap_week: 'CODEX WEEK LEFT',
     ttl_settings: 'Settings',
     ttl_toggle: 'Toggle full / compact',
+    ttl_stats: 'Model usage panel',
+    // Usage panel (stats.html) & speed badge
+    btn_stats: 'Model usage…',
+    st_speed: 'Current speed',
+    st_active: 'Active',
+    st_idle: 'Idle',
+    st_running: 'Generating…',
+    st_last_activity: 'Last activity',
+    st_today: 'Today',
+    st_week7: 'Last 7 days',
+    st_model: 'Model',
+    st_input: 'Input',
+    st_output: 'Output',
+    st_total: 'Total',
+    st_resp: 'Resp',
+    st_hours: 'Today by hour',
+    st_src: 'Aggregated from local Codex session logs (~/.codex/sessions). Fully offline — nothing leaves this machine.',
+    st_empty: 'No session data yet — run a few Codex tasks and numbers will show up here.',
+    st_files: 'Session files',
+    st_scanned: 'Scanned',
+    model_unknown: 'Unknown model',
+    // Vehicle tiers for token speed (icons fixed, names localized)
+    spd_names: ['Turtle', 'Bicycle', 'Motorbike', 'Car', 'Bullet train', 'Rocket'],
     skin_hero: '① Hero',
     skin_glass: '② Glass',
     skin_term: '③ Term',
@@ -208,4 +254,23 @@ window.i18nApply = function (root) {
   root = root || document;
   root.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = window.i18nT(el.dataset.i18n); });
   root.querySelectorAll('[data-i18n-html]').forEach((el) => { el.innerHTML = window.i18nT(el.dataset.i18nHtml); });
+};
+
+// token 速度 -> 载具档位（🐢 单车 🛵 汽车高铁火箭，随界面语言取名）。
+// "区分单车/摩托车"这套隐喻借鉴自社区项目，档位阈值按本机观测标定：
+// Codex 的响应间隔里含工具调用往返，有效输出速度多落在 20~150 tok/s，
+// >300 tok/s 已是极快的连续输出。v == null（给不出速度）返回 level -1。
+window.speedTier = function (v) {
+  const tiers = [
+    { icon: '🐢', max: 15 },
+    { icon: '🚲', max: 40 },
+    { icon: '🛵', max: 80 },
+    { icon: '🚗', max: 150 },
+    { icon: '🚄', max: 300 },
+    { icon: '🚀', max: Infinity },
+  ];
+  const names = (window.I18N[window.I18N_LANG] || window.I18N.zh).spd_names;
+  if (v == null || !isFinite(v)) return { icon: '⏳', name: names[0], level: -1 };
+  const idx = tiers.findIndex((t) => v < t.max);
+  return { icon: tiers[idx].icon, name: names[idx], level: idx };
 };

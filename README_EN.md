@@ -17,6 +17,7 @@ Your Codex quota, rendered as an HP bar pinned to your Windows desktop and taskb
 ## Features
 
 - **Two forms** — an always-on-top borderless floating widget (draggable, full/compact layouts) plus a mini widget docked on the system taskbar
+- **Model usage stats + live token speed** — incrementally tails local Codex session logs (`~/.codex/sessions`, fully offline): per-model input (incl. cache) / output / total tokens and response counts for today and the last 7 days, a 24-hour distribution chart, and the current output speed mapped to vehicle tiers (🐢 🚲 🛵 🚗 🚄 🚀); the floating widget shows a live `🚗 86 t/s` badge while active. Independent of the quota data source, so relay/API-key accounts get usage stats too
 - **10 themes, one click away** — the settings panel renders live previews with each theme's real markup and styles (no more switching back and forth); click a card to apply instantly
 - **Smart taskbar avoidance** — works on Windows 10 and 11: keeps clear of the tray area, Start button and pinned app icons (read via UI Automation, since the real icon positions aren't exposed by legacy window structures on modern Win11); coexists with third-party taskbar widgets like TrafficMonitor; re-docks within 2 seconds as the icon group grows or shrinks; slides to the nearest free spot on conflict
 - **Appearance** — font scale 80–150%, window opacity, accent color (follow the 3-tier quota state, or fixed green/amber/cyan), four content toggles (weekly / credits / reset countdown / email); every change applies live
@@ -57,6 +58,7 @@ cd GPT-HP-BAR/app
 cargo build --release
 ./target/release/gpt-hp-bar.exe          # floating widget + tray
 ./target/release/gpt-hp-bar.exe --probe  # data source diagnostics
+./target/release/gpt-hp-bar.exe --probe-stats  # model usage diagnostics (local session logs, no GUI)
 ```
 
 Toolchain: Rust stable. The standard MSVC route just needs [VS Build Tools](https://visualstudio.microsoft.com/downloads/);
@@ -96,17 +98,19 @@ A theme = `app/frontend/skins/<id>.css` (styles scoped under `.sk-<id>`) + `<id>
 app/
   src/main.rs        # windows / tray / polling / taskbar placement (Win32 + UIA avoidance)
   src/datasource.rs  # data source fallback chain
+  src/stats.rs       # model usage stats + token speed (incremental tail of local session logs)
   src/settings.rs    # settings persistence & auto start
-  frontend/          # floating widget / taskbar widget / settings panel (skins/ = 10 themes)
-docs/                # requirements & design notes (data source research, taskbar avoidance algorithm)
+  frontend/          # floating widget / taskbar widget / settings panel / usage panel (skins/ = 10 themes)
+docs/                # requirements & design notes (data source research, taskbar avoidance, usage stats design)
 ```
 
 ## Roadmap
 
 - [ ] Low-quota alert (threshold notification)
-- [ ] Usage trend sparkline
+- [ ] Usage trend sparkline (in-widget; the usage panel already has a 24-hour chart)
 - [ ] Secondary-monitor taskbar support
 - [x] Localized UI (v0.4: English / 中文, selectable in Settings)
+- [x] Model usage stats + live token speed (v0.6: local session logs, vehicle speed tiers)
 
 ## License
 

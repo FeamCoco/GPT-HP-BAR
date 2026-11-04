@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>GPT-HP-BAR 模型用量</title>
+  <link rel="stylesheet" href="stats.css" />
+</head>
+<body>
+  <main class="win">
+    <header><span class="logo">⚡</span><h1 data-i18n="ttl_stats">模型用量</h1><span class="ver" id="meta"></span></header>
+
+    <!-- 当前速度：tok/s -> 载具档位（🐢🚲🛵🚗🚄🚀，见 i18n.js speedTier） -->
+    <section class="speed-card" id="speed_card">
+      <div class="spd-icon" id="spd_icon">💤</div>
+      <div class="spd-main">
+        <div class="spd-val"><b id="spd_val">--</b><span class="unit">tok/s</span></div>
+        <div class="spd-name" id="spd_name">--</div>
+      </div>
+      <div class="spd-sums">
+        <div class="sum"><span data-i18n="st_today">今日</span><b id="sum_today">--</b></div>
+        <div class="sum"><span data-i18n="st_week7">近 7 天</span><b id="sum_week">--</b></div>
+      </div>
+    </section>
+
+    <section id="sec_hours">
+      <h3 data-i18n="st_hours">今日按小时分布</h3>
+      <div class="hours" id="hours"></div>
+    </section>
+
+    <section id="sec_tbl">
+      <div class="tabs">
+        <button class="tab on" data-tab="today" data-i18n="st_today">今日</button>
+        <button class="tab" data-tab="week" data-i18n="st_week7">近 7 天</button>
+      </div>
+      <table class="tbl">
+        <thead><tr>
+          <th data-i18n="st_model">模型</th>
+          <th class="num" data-i18n="st_input">输入</th>
+          <th class="num" data-i18n="st_output">输出</th>
+          <th class="num" data-i18n="st_total">合计</th>
+          <th class="num" data-i18n="st_resp">响应</th>
+        </tr></thead>
+        <tbody id="tbl"></tbody>
+      </table>
+    </section>
+
+    <div class="empty" id="empty" style="display:none" data-i18n="st_empty"></div>
+    <p class="tip" data-i18n="st_src"></p>
+  </main>
+  <script src="i18n.js"></script>
+  <script src="stats.js"></script>
+</body>
+</html>

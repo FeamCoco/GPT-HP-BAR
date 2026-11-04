@@ -36,6 +36,10 @@
   transition:margin 240ms cubic-bezier(.215,.61,.355,1),padding 240ms cubic-bezier(.215,.61,.355,1),
   max-height 240ms cubic-bezier(.215,.61,.355,1),border-top-width 240ms cubic-bezier(.215,.61,.355,1),opacity .16s ease}
 .sk-card .foot .cd{margin-left:auto}
+/* 当前 token 速度徽标（外壳 stats 事件直填）：活跃时以载具档位示人（🐢🚲🛵🚗🚄🚀），
+   休眠时 display:none —— foot 高度不变，不挤布局；src 允许收缩截断，徽标不换行 */
+.sk-card .foot .hp-speed{white-space:nowrap;color:#9be8c5;font-weight:500;letter-spacing:.2px;flex:none}
+.sk-card .foot .src{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .sk-card .foot b{color:#a7b0c2;font-weight:500}
 .sk-card .dot{width:7px;height:7px;border-radius:99px;background:#6b7488;flex:none}
 .sk-card .dot.ok{background:#34d399;box-shadow:0 0 6px #34d399}

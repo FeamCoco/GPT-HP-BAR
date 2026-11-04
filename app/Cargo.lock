@@ -1417,6 +1417,7 @@ dependencies = [
 name = "gpt-hp-bar"
 version = "0.5.2"
 dependencies = [
+ "chrono",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

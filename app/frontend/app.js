@@ -26,6 +26,10 @@ const zoom = () => (appSettings.font_scale || 100) / 100;
 
 const GEAR_SVG = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
 const CHEV_SVG = `<svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg>`;
+const STATS_SVG = `<svg viewBox="0 0 24 24"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/></svg>`;
+
+// 最新用量统计快照（Rust stats 线程 emit "stats"；皮肤经 HP.speedText 读取）
+window.HP_STATS = null;
 
 /* ---------- 收起 / 展开：内容折叠与窗口补间共用一个时钟 ----------
    收起时有两个独立时钟在跑：窗口矩形由 Rust 的 animate_main_resize 逐帧改，
@@ -185,6 +189,7 @@ async function mountSkin() {
   const chrome = document.createElement('span');
   chrome.className = 'hp-chrome';
   chrome.innerHTML = `<button id="gear" class="tgl" title="${HP.t('ttl_settings')}">${GEAR_SVG}</button>` +
+    `<button id="stats" class="tgl" title="${HP.t('ttl_stats')}">${STATS_SVG}</button>` +
     (sk.sizes.compact ? `<button id="tgl" class="tgl" title="${HP.t('ttl_toggle')}">${CHEV_SVG}</button>` : '');
   const slot = root.querySelector('.hp-chrome-slot');
   if (slot) { slot.style.display = 'inline-flex'; slot.appendChild(chrome); }
@@ -193,6 +198,7 @@ async function mountSkin() {
     root.appendChild(chrome);
   }
   $('#gear').addEventListener('click', () => invoke('open_settings').catch(() => {}));
+  $('#stats').addEventListener('click', () => invoke('open_stats').catch(() => {}));
   if ($('#tgl')) $('#tgl').addEventListener('click', () => toggleCompact());
 
   // 拖拽：整卡按下即系统级拖拽（按钮除外）
@@ -218,7 +224,13 @@ function render(u) {
   const sk = window.SKINS[skinId()];
   const rootEl = document.querySelector('#root > *');
   if (sk && rootEl) sk.update(rootEl, u, appSettings);
+  fillSpeedBadges();
   alivePing();
+}
+
+/// stats 事件只刷速度徽标，不做整卡重渲染（见 common.js HP.fillSpeed 的说明）
+function fillSpeedBadges() {
+  document.querySelectorAll('.hp-speed').forEach(HP.fillSpeed);
 }
 
 function applySettings(s) {
@@ -237,6 +249,7 @@ function applySettings(s) {
 
 listen('usage', (e) => render(e.payload));
 listen('settings', (e) => applySettings(e.payload));
+listen('stats', (e) => { window.HP_STATS = e.payload; fillSpeedBadges(); });
 invoke('refresh_now').then(render).catch(() => render({ ok: false, source: 'none' }));
 invoke('get_settings').then(applySettings).catch(() => {});
 setInterval(alivePing, 5000);

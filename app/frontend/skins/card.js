@@ -16,7 +16,7 @@ window.SKINS['card'] = {
       <div class="row"><span class="k">@@win5h@@</span><div class="bar"><i class="b5"></i></div><b class="n5">--%</b></div>
       <div class="row wk-row extra"><span class="k">@@week_label@@</span><div class="bar"><i class="bwk wk"></i></div><b class="nw">--%</b></div>
       <div class="row cr cr-row extra"><span class="k">credits</span><div class="sp"></div><b class="nc">--</b></div>
-      <div class="foot extra"><span class="dot"></span><span class="src"></span><span class="cd">@@reset@@ <b class="cdv">--</b></span></div>
+      <div class="foot extra"><span class="dot"></span><span class="src"></span><span class="spd hp-speed" style="display:none"></span><span class="cd">@@reset@@ <b class="cdv">--</b></span></div>
     </div>`,
 
   mini: `
@@ -64,6 +64,9 @@ window.SKINS['card'] = {
     const dot = q('.dot'), src = q('.src');
     if (ok) { dot.className = 'dot ok'; src.textContent = u.source; src.title = ''; }
     else { dot.className = 'dot bad'; src.textContent = HP.t('no_source'); src.title = u.error || ''; }
+    // 当前 token 速度徽标：数据由外壳在 stats 事件里直填（见 common.js HP.fillSpeed），
+    // 这里只在换肤/重挂载/整卡重渲染时恢复一次，活跃时徽标以载具档位示人（🐢🚲🛵🚗🚄🚀）
+    HP.fillSpeed(q('.hp-speed'));
   },
 
   updateMini(el, u, s) {

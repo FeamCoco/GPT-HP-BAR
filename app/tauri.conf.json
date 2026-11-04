@@ -35,6 +35,16 @@
         "url": "settings.html"
       },
       {
+        "label": "stats",
+        "title": "GPT-HP-BAR 模型用量",
+        "width": 560,
+        "height": 640,
+        "minWidth": 480,
+        "minHeight": 420,
+        "visible": false,
+        "url": "stats.html"
+      },
+      {
         "label": "mini",
         "title": "GPT-HP-BAR 任务栏",
         "width": 150,

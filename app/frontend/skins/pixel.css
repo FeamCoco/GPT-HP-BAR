@@ -55,11 +55,11 @@
 /* §2 落位：原来夹在 "CODEX-HP" 与 "PLAYER 1" 中间 -> 贴卡片右上内边距，标题行让位。
    注 1：pixel 卡片本身没有 position，绝对定位会以外层窗口（#root）为参照、宽度比卡片大一圈，
          所以这里补上 relative，让 right/top 相对卡片内边距计算。
-   注 2：v0.5 起每套皮肤都有紧凑形态 => 按钮组恒为 2 个（46px）：按"按钮左边缘 14+46=60px
-         + 8px 间隙 - 内容边距 16px" => 标题行让位 52px（完整/紧凑同值）。 */
+   注 2：v0.6 起按钮组恒为 3 个（设置/用量/折叠，3*20+2*6=72px）：按"按钮左边缘 14+72=86px
+         + 8px 间隙 - 内容边距 16px" => 标题行让位 78px（完整/紧凑同值）。 */
 .sk-pixel{position:relative}
 .sk-pixel .hp-chrome{position:absolute;right:14px;top:11px;z-index:5}
-.sk-pixel .p-title{padding-right:52px}
+.sk-pixel .p-title{padding-right:78px}
 /* §1 变体④ retro：2px 硬边 + tone 色，跟 8-bit 语言对齐 */
 .sk-pixel .hp-chrome .tgl{border-radius:3px;border:2px solid #303645;background:#12151d;
   color:var(--tone-b);opacity:.65;box-shadow:0 0 0 2px rgba(0,0,0,.35)}

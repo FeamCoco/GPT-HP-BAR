@@ -224,6 +224,30 @@ window.HP = {
     if (!email) return '';
     return email.length > 18 ? email.slice(0, 17) + '…' : email;
   },
+
+  // ---- 模型用量 / 当前 token 速度（v0.6）-----------------------------------
+  // window.HP_STATS 由外壳 app.js 在 "stats" 事件里更新（Rust 的 stats 线程每 2s
+  // 增量扫描本机 Codex 会话记录，纯本地）。速度徽标刻意不走整卡重渲染：
+  // stats 事件比 usage 密得多（活跃时 2s 一次），整卡重画会让数值补间与
+  // 一次性动效不停重启 —— 所以外壳收到 stats 事件时只直填页面上的 .hp-speed。
+  // 皮肤在模板里放一个 .hp-speed 占位、update() 里调一次 HP.fillSpeed 即接入；
+  // update() 里的这次调用负责换肤/重挂载后徽标能立即恢复。
+  speedText(st) {
+    if (!st || !st.active) return null;
+    const v = st.speed_tok_s;
+    if (v == null) return { text: '⏳ ' + HP.t('st_running'), title: HP.t('st_running') };
+    const n = Math.min(999, Math.round(v));
+    const tier = window.speedTier ? window.speedTier(v) : { icon: '', name: '' };
+    return { text: tier.icon + ' ' + n + ' t/s', title: tier.name + ' · ' + n + ' tok/s' };
+  },
+  fillSpeed(el) {
+    if (!el) return;
+    const info = HP.speedText(window.HP_STATS);
+    if (!info) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.style.display = '';
+    el.textContent = info.text;
+    el.title = info.title;
+  },
 };
 
 // 界面语言胶水（字典与实现在 i18n.js，最先加载）

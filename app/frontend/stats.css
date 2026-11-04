@@ -1,0 +1,74 @@
+/* 模型用量面板：与 settings.css 同一套底色/圆角/字号语言（#0b0e14 深底、12px 圆角卡片），
+   速度卡是主角 —— 载具档位大图标 + tok/s 大数字，活跃时呼吸灯提示"正在生成" */
+:root{
+  --f-ui:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
+  --f-disp:"Segoe UI Variable Display","Segoe UI Semibold","Segoe UI",sans-serif;
+  --f-num:"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0b0e14;color:#e8ecf4;font-family:var(--f-ui);font-size:13.5px;
+  display:flex;justify-content:center;padding:18px}
+.win{width:100%;max-width:520px}
+
+header{display:flex;align-items:center;gap:10px;padding:4px 2px 14px;
+  border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:14px}
+.logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#10b981,#0ea5e9);
+  display:flex;align-items:center;justify-content:center;font-size:14px}
+h1{font-family:var(--f-disp);font-size:16px;font-weight:600}
+.ver{color:#8b93a5;font-size:11.5px;margin-left:auto}
+
+section{background:#11151d;border:1px solid rgba(255,255,255,.07);border-radius:12px;
+  padding:14px 18px;margin-bottom:12px}
+h3{font-size:11px;letter-spacing:2px;color:#8b93a5;font-weight:600;margin-bottom:10px}
+.tip{color:#8b93a5;font-size:11.5px;line-height:1.7;margin:2px 4px 10px}
+.empty{color:#8b93a5;text-align:center;padding:26px 0;font-size:13px}
+
+/* ---- 速度卡 ---- */
+.speed-card{display:flex;align-items:center;gap:16px}
+.spd-icon{font-size:34px;width:56px;height:56px;flex:none;display:flex;align-items:center;
+  justify-content:center;border-radius:14px;background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.08);filter:grayscale(.25)}
+.speed-card.on .spd-icon{filter:none;background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35);
+  animation:spd-breathe 2.2s ease-in-out infinite}
+@keyframes spd-breathe{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0)}50%{box-shadow:0 0 18px 0 rgba(16,185,129,.28)}}
+.spd-main{flex:1;min-width:0}
+.spd-val{display:flex;align-items:baseline;gap:7px}
+.spd-val b{font-family:var(--f-num);font-size:34px;font-weight:600;color:#eaf6ef;line-height:1.05}
+.spd-val .unit{color:#8b93a5;font-size:12px}
+.spd-name{color:#a9b2c4;font-size:12.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spd-sums{flex:none;display:flex;flex-direction:column;gap:6px;text-align:right}
+.sum{color:#8b93a5;font-size:11.5px;display:flex;gap:8px;justify-content:flex-end;align-items:baseline}
+.sum b{font-family:var(--f-num);font-size:14px;color:#c9d0dd}
+
+/* ---- 小时分布：24 根细柱，悬停看数值 ---- */
+.hours{display:flex;align-items:flex-end;gap:3px;height:64px}
+.hours .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;
+  align-items:center;gap:0}
+.hours .col i{display:block;width:100%;min-height:2px;border-radius:3px 3px 1px 1px;
+  background:linear-gradient(180deg,#34d399,#10b981);opacity:.85}
+.hours .col.now i{background:linear-gradient(180deg,#7dd3fc,#0ea5e9);opacity:1}
+.hours .col.zero i{background:rgba(255,255,255,.08);opacity:1}
+.hours .lbl{display:flex;gap:3px;margin-top:5px}
+.hours .lbl span{flex:1;text-align:center;color:#6b7488;font-size:9.5px;font-family:var(--f-num)}
+
+/* ---- 模型表 ---- */
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tab{background:transparent;border:1px solid rgba(255,255,255,.14);color:#a9b2c4;
+  border-radius:8px;padding:4px 14px;font-size:12px;cursor:pointer;font-family:var(--f-ui)}
+.tab:hover{color:#e8ecf4;border-color:rgba(255,255,255,.3)}
+.tab.on{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.5);color:#a7f3d0}
+
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{color:#8b93a5;font-weight:500;font-size:11px;text-align:left;padding:4px 8px;
+  border-bottom:1px solid rgba(255,255,255,.08)}
+.tbl th.num,.tbl td.num{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.tbl td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl .m-name{font-weight:500;color:#dbe2ee;max-width:150px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbl .m-bar{height:4px;border-radius:99px;background:rgba(255,255,255,.07);margin-top:4px;overflow:hidden}
+.tbl .m-bar i{display:block;height:100%;border-radius:99px;
+  background:linear-gradient(90deg,var(--tone-a,#6ee7b7),var(--tone-b,#10b981))}
+.tbl .sub{color:#6b7488;font-size:10.5px;margin-left:4px}
+.tbl .tot{color:#eaf6ef;font-weight:600}
+.tbl .none{color:#6b7488;text-align:center;padding:18px 0}

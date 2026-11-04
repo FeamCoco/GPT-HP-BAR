@@ -209,6 +209,11 @@ $("#src_action").addEventListener("click", () => {
   invoke("open_url", { url: CODEX_LOGIN_URL }).catch(() => {});
 });
 
+// 模型用量面板（stats.html）：与托盘菜单"模型用量…"同一条路径
+$("#btn_stats").addEventListener("click", () => {
+  invoke("open_stats").catch(() => {});
+});
+
 $("#reset").addEventListener("click", async () => {
   const def = { skin: "card", font_scale: 100, opacity: 96, accent: "auto", show_week: true, show_credits: true, show_countdown: true, show_email: true, poll_secs: 60, autostart: false, mini_enabled: true, mini_pos: "right" };
   fill(def);

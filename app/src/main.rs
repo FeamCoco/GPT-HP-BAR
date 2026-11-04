@@ -8,6 +8,7 @@
 
 mod datasource;
 mod settings;
+mod stats;
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 #[cfg(windows)]
@@ -102,6 +103,18 @@ fn label_settings(lang: &str) -> &'static str {
     if lang == "en" { "Settings…" } else { "设置…" }
 }
 
+fn label_usage(lang: &str) -> &'static str {
+    if lang == "en" { "Model usage…" } else { "模型用量…" }
+}
+
+fn stats_title(lang: &str) -> &'static str {
+    if lang == "en" {
+        "GPT-HP-BAR Model Usage"
+    } else {
+        "GPT-HP-BAR 模型用量"
+    }
+}
+
 /// “立即刷新”文案；`busy` 为真时显示“刷新中…”作为点击后的即时反馈
 fn label_refresh(lang: &str, busy: bool) -> &'static str {
     match (lang == "en", busy) {
@@ -136,10 +149,11 @@ fn build_tray_menu(app: &AppHandle, lang: &str) -> tauri::Result<(Menu<tauri::Wr
     let show = CheckMenuItem::with_id(app, "show", label_show(lang, visible), true, visible, None::<&str>)?;
     let mini = CheckMenuItem::with_id(app, "mini", label_mini(lang), true, s.mini_enabled, None::<&str>)?;
     let st = MenuItem::with_id(app, "settings", label_settings(lang), true, None::<&str>)?;
+    let usage = MenuItem::with_id(app, "usage", label_usage(lang), true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", label_refresh(lang, false), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", label_quit(lang), true, None::<&str>)?;
 
-    let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&show, &mini, &st, &refresh, &quit];
+    let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&show, &mini, &st, &usage, &refresh, &quit];
     let menu = Menu::with_items(app, &items)?;
     Ok((menu, TrayMenu { show, mini, refresh, lang: lang.to_string() }))
 }
@@ -206,11 +220,19 @@ fn apply_lang(app: &AppHandle, lang: &str) {
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.set_title(settings_title(lang));
     }
+    if let Some(w) = app.get_webview_window("stats") {
+        let _ = w.set_title(stats_title(lang));
+    }
 }
 
 fn main() {
     if std::env::args().any(|a| a == "--probe") {
         datasource::probe();
+        return;
+    }
+    // --probe-stats：模型用量统计探测（本机 Codex 会话记录，无 GUI、无密钥输出）
+    if std::env::args().any(|a| a == "--probe-stats") {
+        stats::probe();
         return;
     }
     #[cfg(windows)]
@@ -343,6 +365,7 @@ fn main() {
                         sync_tray_menu(app);
                     }
                     "settings" => open_settings_window(app),
+                    "usage" => open_stats_window(app),
                     "refresh" => spawn_refresh(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
@@ -356,6 +379,16 @@ fn main() {
 
             // 设置窗口：关闭时隐藏而非销毁，再次打开直接 show
             if let Some(sw) = app.get_webview_window("settings") {
+                let hidden = sw.clone();
+                sw.on_window_event(move |e| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = e {
+                        api.prevent_close();
+                        let _ = hidden.hide();
+                    }
+                });
+            }
+            // 用量窗口同款：关闭即隐藏（保留已加载的前端状态，再开秒显）
+            if let Some(sw) = app.get_webview_window("stats") {
                 let hidden = sw.clone();
                 sw.on_window_event(move |e| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = e {
@@ -427,9 +460,34 @@ fn main() {
                 });
             }
 
+            // 用量统计线程：增量 tail 本机 Codex 会话记录（纯本地，无网络请求）。
+            // 节奏：每 2s 扫一轮增量；数据变化或会话活跃（速度在变）就 emit "stats"，
+            // 全静默时退化为 30s 心跳（用量面板仍能看到"最近扫描"）。与数据轮询线程
+            // 互不阻塞 —— 会话扫描只有本地文件 IO，不会拖慢额度取数。
+            {
+                let handle = app.handle().clone();
+                thread::spawn(move || {
+                    let mut sc = stats::Scanner::new();
+                    let mut last: Option<stats::Stats> = None;
+                    let mut last_emit = std::time::Instant::now() - Duration::from_secs(60);
+                    loop {
+                        thread::sleep(Duration::from_secs(2));
+                        let s = sc.scan();
+                        let changed = last.as_ref() != Some(&s);
+                        let now = std::time::Instant::now();
+                        if changed || s.active || now.duration_since(last_emit).as_secs() >= 30 {
+                            stats::store(&s);
+                            let _ = handle.emit("stats", &s);
+                            last = Some(s);
+                            last_emit = now;
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![refresh_now, set_window_size, open_settings, get_settings, save_settings, alive_ping, open_url])
+        .invoke_handler(tauri::generate_handler![refresh_now, set_window_size, open_settings, get_settings, save_settings, alive_ping, open_url, get_stats, open_stats])
         .run(tauri::generate_context!())
         .expect("error while running gpt-hp-bar");
 }
@@ -1847,6 +1905,42 @@ fn reconcile_window(app: &AppHandle, label: &str) {
 fn open_settings(app: AppHandle) -> Result<(), String> {
     open_settings_window(&app);
     Ok(())
+}
+
+/// 打开（或聚焦）模型用量窗口（数据由 stats 线程持续 emit，无需窗口侧轮询）
+#[tauri::command]
+fn open_stats(app: AppHandle) -> Result<(), String> {
+    open_stats_window(&app);
+    Ok(())
+}
+
+/// 最近一次用量快照（stats 线程每轮更新；面板打开时先取一次打底）
+#[tauri::command]
+fn get_stats() -> Option<stats::Stats> {
+    stats::snapshot()
+}
+
+fn open_stats_window(app: &AppHandle) {
+    let lang = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .map(|g| g.lang.clone())
+        .unwrap_or_else(|_| "zh".into());
+    if let Some(w) = app.get_webview_window("stats") {
+        let _ = w.set_title(stats_title(&lang));
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return;
+    }
+    // 兜底：静态声明缺失时动态创建
+    let _ = WebviewWindowBuilder::new(app, "stats", WebviewUrl::App("stats.html".into()))
+        .title(stats_title(&lang))
+        .inner_size(560.0, 640.0)
+        .min_inner_size(480.0, 420.0)
+        .resizable(true)
+        .build();
 }
 
 fn open_settings_window(app: &AppHandle) {
